@@ -1,4 +1,4 @@
-# Brickomancer — Master Plan
+﻿# Brickomancer — Master Plan
 
 ## 1. What This Is
 
@@ -27,7 +27,7 @@ Built for personal use as a local Python/React web app (V1), with a clean REST A
 
 ## 3. Data Store
 
-**No database.** All session state is ephemeral — held in memory for the duration of a request. Intermediate files are written to a per-request temp directory (`tmp/<uuid>/`) and deleted after the response is sent.
+**No database.** All session state is ephemeral — held in memory for the duration of a request. Intermediate files are written to a per-request temp directory (`tmp/<uuid>/`) and cleaned up by a startup sweep: on every backend start, `main.py` deletes any `tmp/` subdirectory older than 1 hour. Files survive long enough for the browser to render previews and for the user to request instructions.
 
 **Static reference data** — downloaded once during project setup via `scripts/download_data.py`, stored in `data/`:
 
@@ -39,7 +39,7 @@ Built for personal use as a local Python/React web app (V1), with a clean REST A
 | `data/ldraw/LDConfig.ldr` | `https://library.ldraw.org/library/official/LDConfig.ldr` | CC BY 4.0 | Authoritative LEGO color definitions with official RGB hex |
 | `data/ldraw/dimensions.csv` | Community-extracted (jncraton, MIT) | MIT | Bounding box dimensions for 4K+ parts in LDraw units |
 
-**Per-request scratch** (`tmp/<uuid>/`, cleaned up after response):
+**Per-request scratch** (`tmp/<uuid>/`, cleaned up on next backend startup if older than 1 hour):
 
 ```
 tmp/<uuid>/
@@ -75,7 +75,17 @@ tmp/<uuid>/
    {"archetype": "cylinder", "height_studs": 8, "radius_studs": 5,
     "colors": ["white", "yellow", "light_blue"]}
    ```
-3. Python builds primitive mesh from archetype: `trimesh.creation.cylinder(radius=r*0.008, height=h*0.0096)`
+3. Python builds primitive mesh from archetype using trimesh:
+
+   | archetype | trimesh call |
+   |---|---|
+   | `cylinder` | `trimesh.creation.cylinder(radius=radius_studs*0.008, height=height_studs*0.0096)` |
+   | `box` | `trimesh.creation.box(extents=[width_studs*0.008, height_studs*0.0096, depth_studs*0.008])` |
+   | `sphere` | `trimesh.creation.icosphere(radius=radius_studs*0.008)` |
+   | `cone` | `trimesh.creation.cone(radius=radius_studs*0.008, height=height_studs*0.0096)` |
+   | `house` | box for body + cone for roof, stacked (height split 60/40) |
+   | `compound` | fall back to `box` using max of available dimension fields |
+
 4. `mesh.voxelized(pitch=8.0).fill()` → same numpy bool format as Path A
 
 ### 4.3 Piece Detection (Optional)
@@ -93,8 +103,16 @@ tmp/<uuid>/
 
 1. **Image input:** resize to 150×150, convert to Lab color space, `KMeans(n_clusters=8).fit(pixels)` → cluster centroids → hex strings
 2. **Text input:** parse color names from Llama shape parameters (e.g. `["white", "yellow"]`) → look up hex from `colors.csv` by name
-3. For each extracted color: compute ΔE2000 (`basic-colormath.get_delta_e_hex()`) against every non-transparent LEGO color in `colors.csv`
-4. Return `list[(lego_color_id, lego_color_name, hex, cluster_weight)]` sorted by cluster size
+3. For each extracted color: compute ΔE2000 (`basic-colormath.get_delta_e_hex()`) against every non-transparent LEGO color in `colors.csv`. ΔE2000 is a perceptual color difference metric: 0 = identical, <2 = visually indistinguishable, higher = more different. Return nearest match (lowest ΔE2000).
+4. Return `list[ColorMatch]` sorted by cluster weight (largest cluster first)
+
+`ColorMatch` shape:
+| field | type | note |
+|---|---|---|
+| `color_id` | `int` | Rebrickable/LDraw color code |
+| `color_name` | `str` | e.g. `"Red"` |
+| `hex` | `str` | 6-char hex, no `#`, e.g. `"B40000"` |
+| `cluster_weight` | `float` | fraction of image pixels in this cluster (0–1) |
 
 ### 4.5 Suggestion Generation
 
@@ -249,7 +267,7 @@ frontend/src/
 |---|---|---|---|---|
 | POST | `/api/generate/from-image` | `multipart/form-data` | `image` (file), `piece_images[]` (files, optional), `height_studs` (int, default 10) | `GenerateResponse` |
 | POST | `/api/generate/from-text` | `application/json` | `{description: str, piece_images: [base64], height_studs: int}` | `GenerateResponse` |
-| POST | `/api/generate/instructions` | `application/json` | `{suggestion_id: str}` | `application/pdf` file |
+| POST | `/api/generate/instructions` | `application/json` | `{suggestion_id: str}` — format: `<request_uuid>_<tier_index>` (e.g. `"d4e8f1a2-..._1"`) | `application/pdf` file |
 | GET | `/api/colors` | — | — | `[{id, name, hex, is_trans}]` |
 | GET | `/api/status` | — | — | `{status, llama_server_ok, ldview_ok, lpub3d_ok}` |
 
@@ -258,9 +276,9 @@ frontend/src/
 {
   "suggestions": [
     {
-      "id": "<uuid>",
+      "id": "<request_uuid>_<tier_index>",
       "tier": "compact|standard|detailed",
-      "preview_url": "/tmp/<uuid>/suggestion_0_preview.png",
+      "preview_url": "/static/tmp/<request_uuid>/suggestion_<tier_index>_preview.png",
       "parts_count": 47,
       "parts_list": [
         {"part_id": "3001", "color_name": "Red", "color_hex": "B40000", "qty": 4}
@@ -379,10 +397,10 @@ brickomancer/
 **Prerequisites:**
 - Python 3.12+, uv, Node.js 20+
 - CUDA GPU with 6 GB+ VRAM (for TripoSR)
-- llama-server running with Llama 3.2-1B GGUF on port 8080 (void_furnace llama.cpp setup)
+- llama-server running with Llama 3.2-1B GGUF on port 8080 (void_furnace llama.cpp setup). GGUF = quantized model file format used by llama.cpp; obtain model via `huggingface-cli download` or the void_furnace setup script
 - LDView installed and on PATH (`LDView --version` or `ldview --version` works)
 - LPub3D installed and on PATH (`lpub3d -?` works)
-- `CLAUDE_CODE_OAUTH_TOKEN` set in `.env`
+- `CLAUDE_CODE_OAUTH_TOKEN` set in `.env` — obtain by running `claude` CLI and authenticating; the token appears in `~/.claude/` or can be copied from the void_furnace `.env` if already set up there
 
 **Setup:**
 ```powershell
@@ -406,6 +424,7 @@ cd frontend; npm run dev                         # → http://localhost:5173
 uv run pytest -q
 uv run ruff check .
 uv run mypy src
+npm run build --prefix frontend
 ```
 
 **Health check:**
@@ -419,89 +438,112 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 
 ### Automated Steps
 
+<!-- autofix-applied: 2026-06-11 -->
 ### Step 1: Project scaffold
-- **Problem:** Create FastAPI backend shell (`main.py`, `routers/`, `services/`, `models/`, `utils/`), React + Vite frontend shell, `uv` `pyproject.toml` with all Python deps, CORS wiring, `.env.example`, `.gitignore`, empty `tmp/` and `data/` directories, base pytest config, Vite config with `server.port=5173 strictPort=true proxy={/api: localhost:8000}`
-- **Issue:** #
+- **Problem:** Create FastAPI backend shell (`main.py`, `routers/`, `services/`, `models/`, `utils/`), React + Vite frontend shell, `uv` `pyproject.toml` with all Python deps, CORS wiring, `.env.example`, `.gitignore`, empty `tmp/` and `data/` directories, base pytest config, Vite config with `server.port=5173 strictPort=true proxy={/api: localhost:8000}`. `main.py` must: (1) mount `tmp/` as `StaticFiles` at `/static/tmp` so preview PNGs are browser-accessible; (2) run a startup sweep deleting any `tmp/<uuid>/` dirs older than 1 hour
+- **Type:** code
+- **Issue:** #1
 - **Flags:** --reviewers code
 - **Produces:** `pyproject.toml`, `src/brickomancer/main.py`, `frontend/package.json`, `frontend/vite.config.ts`, `frontend/src/App.tsx`, `.env.example`, `.gitignore`
+- **suggestion_id format:** `<request_uuid>_<tier_index>` (0=compact, 1=standard, 2=detailed); instructions endpoint splits on `_`, validates UUID prefix via `uuid.UUID()`, constructs `tmp/<request_uuid>/suggestion_<tier_index>.ldr`
 - **Done when:** `uv run fastapi dev src/brickomancer/main.py` starts and `GET /api/status` returns HTTP 200; `npm run dev` in `frontend/` starts and serves index page; `uv run pytest -q` exits 0; `uv run mypy src` exits 0
 - **Depends on:** none
 
+<!-- autofix-applied: 2026-06-11 -->
 ### Step 2: Data layer
 - **Problem:** `scripts/download_data.py` downloads Rebrickable CC0 CSVs and `LDConfig.ldr` to `data/`. `data_service.py` parses and loads color palette + parts catalog at FastAPI startup. Expose `get_color(id)`, `get_part(num)`, `list_colors()`. Parse LDConfig.ldr `!COLOUR` entries for the authoritative `CODE → VALUE (#hex)` mapping.
-- **Issue:** #
+- **Type:** code
+- **Issue:** #2
 - **Flags:** --reviewers code
 - **Produces:** `scripts/download_data.py`, `src/brickomancer/services/data_service.py`, `tests/test_data_service.py`
 - **Done when:** `uv run python scripts/download_data.py` completes and all 5 files appear in `data/`; `data_service.list_colors()` returns ≥100 entries each with non-empty hex; `get_color(15)` returns White with hex `F4F4F4`; unit tests pass
 - **Depends on:** Step 1
 
+<!-- autofix-applied: 2026-06-11 -->
 ### Step 3: Color mapping module
 - **Problem:** `color_service.py` implements (1) KMeans k=8 in Lab color space for dominant color extraction from images, (2) ΔE2000 nearest-LEGO-color matching using `basic-colormath`. Add `scikit-learn`, `scikit-image`, `Pillow`, `basic-colormath` to `pyproject.toml`.
-- **Issue:** #
+- **Type:** code
+- **Issue:** #3
 - **Flags:** --reviewers code
 - **Produces:** `src/brickomancer/services/color_service.py`, `tests/test_color_service.py`
 - **Done when:** `extract_colors("tests/integration/fixtures/cake.jpg")` returns dominant colors that include matches to White, Yellow, and a blue variant (Light Bluish Gray or similar); `match_color("F4F4F4")` → White (id=15); unit tests pass including Lab-space conversion
 - **Depends on:** Step 2
 
+<!-- autofix-applied: 2026-06-11 -->
 ### Step 4: Image → 3D pipeline
 - **Problem:** `image_pipeline.py` implements: (1) `rembg` background removal → transparent PNG, (2) TripoSR inference → watertight OBJ, (3) trimesh mesh loading + scale to `height_studs * 0.0096m`, (4) `mesh.voxelized(pitch=8.0, method='ray').fill()` → numpy bool array. Add `rembg`, `trimesh`, `torchmesh`, and TripoSR to deps.
-- **Issue:** #
+- **Type:** code
+- **Issue:** #5
 - **Flags:** --reviewers code
 - **Produces:** `src/brickomancer/services/image_pipeline.py`, `tests/test_image_pipeline.py`
 - **Done when:** `image_pipeline.run("tests/integration/fixtures/cake.jpg", height_studs=8)` returns numpy bool array with shape `(X, 8, Z)` where X,Z > 2; no CUDA OOM; unit test with small fixture image passes
 - **Depends on:** Step 1
 
+<!-- autofix-applied: 2026-06-11 -->
 ### Step 5: Text → shape pipeline
 - **Problem:** `text_pipeline.py` sends a description string to llama-server at `localhost:8080` (llama.cpp, OpenAI-compatible `/v1/chat/completions`), extracts structured shape params (see Appendix §12.3 for prompt), builds a trimesh primitive from the archetype, voxelizes it. Raises `ServiceUnavailableError` when llama-server is unreachable.
-- **Issue:** #
+- **Type:** code
+- **Issue:** #6
 - **Flags:** --reviewers code
 - **Produces:** `src/brickomancer/services/text_pipeline.py`, `tests/test_text_pipeline.py`
 - **Done when:** `text_pipeline.run("big blue birthday cake")` with real llama-server returns numpy bool array consistent with a cylinder ~8 studs tall; unit tests pass with mocked `httpx` call; `ServiceUnavailableError` raised when server unavailable
 - **Depends on:** Step 1
 
+<!-- autofix-applied: 2026-06-11 -->
 ### Step 6: Brick packing + LDraw output
 - **Problem:** `brick_packer.py` implements greedy layer-by-layer placement (brick type list: 2×4, 2×3, 2×2, 1×4, 1×3, 1×2, 1×1), masonry offset, interlocking check, and connectivity repair via networkx adjacency graph. `ldraw_writer.py` converts `list[BrickPlacement]` to a valid `.ldr` file with Y-sorted step sequencing (8 bricks/step). Add `networkx` to deps.
-- **Issue:** #
+- **Type:** code
+- **Issue:** #7
 - **Flags:** --reviewers code
 - **Produces:** `src/brickomancer/services/brick_packer.py`, `src/brickomancer/services/ldraw_writer.py`, `src/brickomancer/models/brick.py`, `tests/test_brick_packer.py`, `tests/test_ldraw_writer.py`
 - **Done when:** A 5×5×5 bool voxel cube → placement list where every brick at layer y>0 has ≥1 stud connection to layer y-1; the resulting `.ldr` file is accepted by `LDView <file>` without error; `0 STEP` markers appear after every 8 bricks; unit tests pass
 - **Depends on:** Step 1
 
+<!-- autofix-applied: 2026-06-11 -->
 ### Step 7: Piece detection from photos
 - **Problem:** `piece_detector.py` calls `claude` CLI subprocess via `CLAUDE_CODE_OAUTH_TOKEN` with the prompt in Appendix §12.4. Parses JSON output to `list[PieceCount]`. `merge_piece_lists()` sums quantities for duplicate `(part_id, color)` pairs across multiple photos. `subprocess_utils.run_claude_subprocess()` wraps the subprocess call with 2× retry on JSON parse failure.
-- **Issue:** #
+- **Type:** code
+- **Issue:** #8
 - **Flags:** --reviewers code
 - **Produces:** `src/brickomancer/services/piece_detector.py`, `src/brickomancer/utils/subprocess_utils.py`, `tests/test_piece_detector.py`
 - **Done when:** `detect_pieces(["tests/integration/fixtures/lego_cake.jpeg"])` returns ≥1 `PieceCount` with a valid 4-digit `part_id`; unit tests mock the subprocess; `merge_piece_lists()` correctly sums duplicate entries
 - **Depends on:** Step 1
 
+<!-- autofix-applied: 2026-06-11 -->
 ### Step 8: Suggestion generation + preview rendering
 - **Problem:** `suggestion_service.py` generates 3 suggestions (compact/standard/detailed tiers) from a voxel grid: downsamples for compact tier (every-other-stud), runs `brick_packer.pack()` for each, assigns colors from color palette, writes LDraw files via `ldraw_writer`, calls LDView headless for each preview PNG, extracts parts list from placements. Returns `list[Suggestion]`.
-- **Issue:** #
+- **Type:** code
+- **Issue:** #9
 - **Flags:** --reviewers code
 - **Produces:** `src/brickomancer/services/suggestion_service.py`, `tests/test_suggestion_service.py`
 - **Done when:** Given a cylinder voxel grid (8×5×5), `generate_suggestions()` returns exactly 3 `Suggestion` objects; each has a non-empty `preview_url` pointing to an existing PNG; each has a non-empty `parts_list`; the 3 suggestions have different `parts_count` values; unit tests pass with mocked LDView subprocess
 - **Depends on:** Steps 3, 6
 
+<!-- autofix-applied: 2026-06-11 -->
 ### Step 9: Instruction PDF generation
 - **Problem:** `instruction_service.py` calls LPub3D headless (`lpub3d -pdf -o <dir> <ldr>`) via `subprocess_utils.run_lpub3d()`. Raises `ToolUnavailableError` if LPub3D not on PATH. Returns path to generated PDF.
-- **Issue:** #
+- **Type:** code
+- **Issue:** #10
 - **Flags:** --reviewers code
 - **Produces:** `src/brickomancer/services/instruction_service.py`, `tests/test_instruction_service.py`
 - **Done when:** `generate_pdf(ldr_path, tmp_dir)` with the Step 6 test fixture `.ldr` produces a `.pdf` file > 10 KB; unit tests mock the subprocess call; live integration test with real LPub3D CLI produces a readable PDF; `ToolUnavailableError` raised when LPub3D not on PATH
 - **Depends on:** Step 6
 
+<!-- autofix-applied: 2026-06-11 -->
 ### Step 10: React UI — full workflow
 - **Problem:** Build the complete 4-step React UI: `WorkflowStepper` (step manager), `InputStep` (image upload or text textarea with toggle), `PiecesStep` (multi-file upload + skip), `SuggestionsStep` (gallery of 3 cards: preview image, tier badge, parts count, "Generate Instructions" button), `InstructionsStep` (spinner during POST, download button on success). Wire `useGenerate` hook to all FastAPI routes. All routes wired end-to-end.
-- **Issue:** #
+- **Type:** code
+- **Issue:** #11
 - **Flags:** --reviewers code
 - **Produces:** `frontend/src/components/` (all 4 components + WorkflowStepper), `frontend/src/hooks/useGenerate.ts`, `frontend/src/types.ts`, updated `frontend/src/App.tsx`
 - **Done when:** `tsc --noEmit` exits 0; `npm run build` succeeds; all 5 FastAPI routes return correct shapes from `curl`
 - **Depends on:** Steps 1, 8, 9
 
+<!-- autofix-applied: 2026-06-11 -->
 ### Step 11: Integration smoke gate
 - **Problem:** `tests/integration/test_smoke.py` exercises the full pipeline end-to-end with real services (no mocks): POST `cake.jpg` to `/api/generate/from-image`, assert 3 suggestions returned, assert each has a `preview_url` resolving to a non-empty PNG on disk, assert `parts_list` non-empty. Also POST `"big blue birthday cake"` to `/api/generate/from-text` and assert same structure. Add `cake.jpg` and `lego_cake.jpeg` to `tests/integration/fixtures/`.
-- **Issue:** #
+- **Type:** code
+- **Issue:** #12
 - **Flags:** --reviewers code
 - **Produces:** `tests/integration/test_smoke.py`, `tests/integration/fixtures/cake.jpg`, `tests/integration/fixtures/lego_cake.jpeg`
 - **Done when:** `uv run pytest tests/integration/ -v` passes with all real services running; full image pipeline completes in < 120s; no exceptions in FastAPI server logs
@@ -511,7 +553,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 
 ### Step M1: End-to-end UAT
 - **Source step:** Step 11 (smoke gate must pass first)
-- **Issue:** #
+- **Issue:** #13
 - **Commands:**
   ```powershell
   # Terminal 1
