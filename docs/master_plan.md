@@ -503,6 +503,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 - **Produces:** `src/brickomancer/services/brick_packer.py`, `src/brickomancer/services/ldraw_writer.py`, `src/brickomancer/models/brick.py`, `tests/test_brick_packer.py`, `tests/test_ldraw_writer.py`
 - **Done when:** A 5×5×5 bool voxel cube → placement list where every brick at layer y>0 has ≥1 stud connection to layer y-1; the resulting `.ldr` file is accepted by `LDView <file>` without error; `0 STEP` markers appear after every 8 bricks; unit tests pass
 - **Depends on:** Step 1
+- **Status:** DONE (2026-06-11)
 
 <!-- autofix-applied: 2026-06-11 -->
 ### Step 7: Piece detection from photos
