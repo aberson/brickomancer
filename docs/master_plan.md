@@ -481,6 +481,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 - **Produces:** `src/brickomancer/services/image_pipeline.py`, `tests/test_image_pipeline.py`
 - **Done when:** `image_pipeline.run("tests/integration/fixtures/cake.jpg", height_studs=8)` returns numpy bool array with shape `(X, 8, Z)` where X,Z > 2; no CUDA OOM; unit test with small fixture image passes
 - **Depends on:** Step 1
+- **Status:** DONE (2026-06-11)
 
 <!-- autofix-applied: 2026-06-11 -->
 ### Step 5: Text → shape pipeline
