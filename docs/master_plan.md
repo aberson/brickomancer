@@ -525,6 +525,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 - **Produces:** `src/brickomancer/services/suggestion_service.py`, `tests/test_suggestion_service.py`
 - **Done when:** Given a cylinder voxel grid (8×5×5), `generate_suggestions()` returns exactly 3 `Suggestion` objects; each has a non-empty `preview_url` pointing to an existing PNG; each has a non-empty `parts_list`; the 3 suggestions have different `parts_count` values; unit tests pass with mocked LDView subprocess
 - **Depends on:** Steps 3, 6
+- **Status:** DONE (2026-06-11)
 
 <!-- autofix-applied: 2026-06-11 -->
 ### Step 9: Instruction PDF generation
