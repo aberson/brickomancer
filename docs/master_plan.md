@@ -547,6 +547,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 - **Produces:** `frontend/src/components/` (all 4 components + WorkflowStepper), `frontend/src/hooks/useGenerate.ts`, `frontend/src/types.ts`, updated `frontend/src/App.tsx`
 - **Done when:** `tsc --noEmit` exits 0; `npm run build` succeeds; all 5 FastAPI routes return correct shapes from `curl`
 - **Depends on:** Steps 1, 8, 9
+- **Status:** DONE (2026-06-11)
 
 <!-- autofix-applied: 2026-06-11 -->
 ### Step 11: Integration smoke gate
@@ -557,6 +558,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 - **Produces:** `tests/integration/test_smoke.py`, `tests/integration/fixtures/cake.jpg`, `tests/integration/fixtures/lego_cake.jpeg`
 - **Done when:** `uv run pytest tests/integration/ -v` passes with all real services running; full image pipeline completes in < 120s; no exceptions in FastAPI server logs
 - **Depends on:** Steps 4, 5, 6, 7, 8, 9, 10
+- **Status:** DONE (2026-06-11)
 
 ### Manual Steps
 
