@@ -514,6 +514,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 - **Produces:** `src/brickomancer/services/piece_detector.py`, `src/brickomancer/utils/subprocess_utils.py`, `tests/test_piece_detector.py`
 - **Done when:** `detect_pieces(["tests/integration/fixtures/lego_cake.jpeg"])` returns ≥1 `PieceCount` with a valid 4-digit `part_id`; unit tests mock the subprocess; `merge_piece_lists()` correctly sums duplicate entries
 - **Depends on:** Step 1
+- **Status:** DONE (2026-06-11)
 
 <!-- autofix-applied: 2026-06-11 -->
 ### Step 8: Suggestion generation + preview rendering
