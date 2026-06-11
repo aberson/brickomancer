@@ -63,7 +63,7 @@ brickomancer/
 
 ## Architecture summary
 
-**Backend (FastAPI):** Stateless REST API. Each request allocates a `tmp/<uuid>/` scratch directory (cleaned up after response). Two input paths: image (rembg → TripoSR → trimesh voxelization) or text (Llama 3.2-1B → primitive mesh → voxelization). Both converge at brick packing → LDraw file → LDView PNG previews. LPub3D generates the final instruction PDF from the selected suggestion's LDraw file.
+**Backend (FastAPI):** Stateless REST API. Each request allocates a `tmp/<uuid>/` scratch directory (persists in V1 — no cleanup; LDR files must survive the `/instructions` call that follows). Two input paths: image (rembg → TripoSR → trimesh voxelization) or text (Llama 3.2-1B → primitive mesh → voxelization). Both converge at brick packing → LDraw file → LDView PNG previews. LPub3D generates the final instruction PDF from the selected suggestion's LDraw file.
 
 **Frontend (React):** 4-step wizard. POSTs to FastAPI and shows a spinner during synchronous requests. No job queue needed for V1.
 
@@ -75,7 +75,7 @@ brickomancer/
 
 ## Current state
 
-Plan written (`master_plan.md`). No code yet. Build steps 1–11 + M1 in plan. Next: `/plan-expedite --plan master_plan.md` then `/build-phase --plan master_plan.md`.
+Steps 1–11 complete (2026-06-11). Full pipeline implemented: image/text → voxels → brick pack → LDraw → LDView previews → suggestion cards → LPub3D instruction PDF. React 4-step UI wired. 176 unit tests passing, 0 type errors, 0 lint violations. Integration smoke tests in `tests/integration/` (skip when services unavailable). Pending: Step M1 manual UAT (run both servers, verify full workflow in browser).
 
 ## Environment requirements
 

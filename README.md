@@ -117,4 +117,4 @@ scripts/
 
 ## Status
 
-Plan written. Build via `/build-phase --plan docs/master_plan.md` (Steps 1–11 + M1 UAT).
+**Steps 1–11 complete** — issues #1–12 closed. Full pipeline: image/text → voxels → brick pack → LDraw → LDView previews → LPub3D instruction PDF. React 4-step UI. 176 tests passing, 0 type errors, 0 lint violations. Pending: Step M1 manual UAT.

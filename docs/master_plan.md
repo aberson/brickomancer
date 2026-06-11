@@ -563,6 +563,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 ### Manual Steps
 
 ### Step M1: End-to-end UAT
+- **Type:** operator
 - **Source step:** Step 11 (smoke gate must pass first)
 - **Issue:** #13
 - **Commands:**
@@ -589,6 +590,55 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
   | `/api/status` endpoint | `{llama_server_ok: true, ldview_ok: true, lpub3d_ok: true}` |
 
 After M1 passes, Brickomancer V1 is complete.
+
+---
+
+## Phase 1 — Full Pipeline (Steps 1–11)
+
+**All 11 issues closed. 176/176 tests passing. Zero type errors. Zero lint violations.**
+
+### What was built
+
+- **Step 1:** FastAPI + React scaffold, CORS, StaticFiles mount at `/static/tmp`, startup tmp cleanup, proxy config
+- **Step 2:** Rebrickable CSV + LDConfig.ldr data loader, `/api/colors` endpoint, offline parts DB
+- **Step 3:** Color service — K-means clustering, Lab ΔE2000 matching, 28-color safe V1 palette
+- **Step 4:** Image pipeline — rembg background removal → TripoSR watertight mesh → trimesh voxelization
+- **Step 5:** Text pipeline — Llama 3.2-1B shape param extraction → primitive mesh → voxelization
+- **Step 6:** Brick packer (greedy + masonry offset + connectivity repair) + LDraw writer
+- **Step 7:** Piece detector — Claude subprocess via CLAUDE_CODE_OAUTH_TOKEN, JSON parsing, merge
+- **Step 8:** Suggestion service — 3-tier generation (compact/standard/detailed) + LDView preview rendering
+- **Step 9:** Instruction PDF service — LPub3D headless CLI wrapper, ToolUnavailableError
+- **Step 10:** FastAPI route wiring (from-image, from-text, instructions) + React 4-step UI + useGenerate hook
+- **Step 11:** Integration smoke tests — httpx against live server, graceful skip when services absent
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/brickomancer/main.py` | FastAPI app, startup cleanup, status endpoint, StaticFiles |
+| `src/brickomancer/routers/generate.py` | Three wired routes; path-traversal filename sanitization |
+| `src/brickomancer/routers/info.py` | `/api/colors` endpoint |
+| `src/brickomancer/services/` | All 8 services: color, data, image_pipeline, text_pipeline, brick_packer, ldraw_writer, piece_detector, suggestion_service, instruction_service |
+| `src/brickomancer/models/brick.py` | BRICK_TYPES, BRICK_PART_IDS, BrickPlacement, ColorMatch, ShapeParams, PieceCount |
+| `src/brickomancer/models/schemas.py` | Pydantic request/response schemas |
+| `src/brickomancer/utils/` | temp_dir.py, subprocess_utils.py (run_claude_subprocess, run_ldview, run_lpub3d) |
+| `frontend/src/hooks/useGenerate.ts` | 4-step state machine, blob URL management, API wiring |
+| `frontend/src/components/` | WorkflowStepper, InputStep, PiecesStep, SuggestionsStep, InstructionsStep |
+| `frontend/src/types.ts` | TypeScript interfaces matching Pydantic schemas |
+| `tests/` | 176 unit tests; integration smoke tests with httpx |
+
+### Fresh context notes for Phase 1
+
+| Item | Detail |
+|---|---|
+| `CLAUDE_CODE_OAUTH_TOKEN` | Use this, never `ANTHROPIC_API_KEY`, for Claude subprocess calls |
+| `suggestion_id` format | `<uuid>_<tier_index>` (0=compact, 1=standard, 2=detailed) — contract between suggestion_service and generate router |
+| tmp dir lifetime | Dirs persist in V1 (no cleanup after response); LDR files must survive until `/instructions` is called |
+| `_STUD_METERS = 0.0096` | Each module defines its own copy — deliberate (no cross-module coupling), not drift |
+| `method='subdivide'` in voxelization | Avoids optional rtree dependency; do not change to default method |
+| `connectivity_repair` | Replaces disconnected bricks (removes originals + adds bridge 1×1); does not append alongside originals |
+| LDView PNG check | After exit-0, verify `Path(output_png).exists()` — LDView can exit 0 without writing the file |
+| `--output-format json` removed | Claude CLI wraps response in envelope; use `claude -p prompt --image path` plain text only |
 
 ## 12. Appendix
 
