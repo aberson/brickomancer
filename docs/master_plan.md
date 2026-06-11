@@ -492,6 +492,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 - **Produces:** `src/brickomancer/services/text_pipeline.py`, `tests/test_text_pipeline.py`
 - **Done when:** `text_pipeline.run("big blue birthday cake")` with real llama-server returns numpy bool array consistent with a cylinder ~8 studs tall; unit tests pass with mocked `httpx` call; `ServiceUnavailableError` raised when server unavailable
 - **Depends on:** Step 1
+- **Status:** DONE (2026-06-11)
 
 <!-- autofix-applied: 2026-06-11 -->
 ### Step 6: Brick packing + LDraw output
