@@ -1,0 +1,47 @@
+[project]
+name = "brickomancer"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.110.0",
+  "uvicorn[standard]>=0.27.0",
+  "python-multipart>=0.0.9",
+  "pydantic>=2.5.0",
+  "httpx>=0.27.0",
+  "rembg>=2.0.0",
+  "trimesh>=4.0.0",
+  "networkx>=3.0",
+  "numpy>=1.26.0",
+  "Pillow>=10.0.0",
+  "scikit-learn>=1.4.0",
+  "scikit-image>=0.22.0",
+  "basic-colormath>=0.3.0",
+  "python-dotenv>=1.0.0",
+  "aiofiles>=23.0.0",
+]
+# NOTE: TripoSR requires a separate CUDA-specific torch install:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#   pip install git+https://github.com/VAST-AI-Research/TripoSR.git
+# torchmesh: PyPI package name needs verification; may be part of torch3d or similar
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.mypy]
+strict = false
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.15.16",
+]

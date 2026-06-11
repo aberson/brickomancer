@@ -1,0 +1,36 @@
+# Environment
+.env
+
+# Per-request scratch (ephemeral)
+tmp/*
+!tmp/.gitkeep
+
+# Rebrickable data (re-downloaded via scripts/download_data.py)
+data/rebrickable/*
+!data/rebrickable/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db

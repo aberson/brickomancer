@@ -448,6 +448,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 - **suggestion_id format:** `<request_uuid>_<tier_index>` (0=compact, 1=standard, 2=detailed); instructions endpoint splits on `_`, validates UUID prefix via `uuid.UUID()`, constructs `tmp/<request_uuid>/suggestion_<tier_index>.ldr`
 - **Done when:** `uv run fastapi dev src/brickomancer/main.py` starts and `GET /api/status` returns HTTP 200; `npm run dev` in `frontend/` starts and serves index page; `uv run pytest -q` exits 0; `uv run mypy src` exits 0
 - **Depends on:** none
+- **Status:** DONE (2026-06-11)
 
 <!-- autofix-applied: 2026-06-11 -->
 ### Step 2: Data layer
