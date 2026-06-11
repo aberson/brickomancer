@@ -536,6 +536,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 - **Produces:** `src/brickomancer/services/instruction_service.py`, `tests/test_instruction_service.py`
 - **Done when:** `generate_pdf(ldr_path, tmp_dir)` with the Step 6 test fixture `.ldr` produces a `.pdf` file > 10 KB; unit tests mock the subprocess call; live integration test with real LPub3D CLI produces a readable PDF; `ToolUnavailableError` raised when LPub3D not on PATH
 - **Depends on:** Step 6
+- **Status:** DONE (2026-06-11)
 
 <!-- autofix-applied: 2026-06-11 -->
 ### Step 10: React UI — full workflow
