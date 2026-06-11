@@ -1,9 +1,12 @@
 """Subprocess utilities for calling external tools (Claude CLI, LDView, LPub3D)."""
 
+import glob
 import os
 import shutil
 import subprocess
 from pathlib import Path
+
+_LPUB3D_NOT_FOUND_MSG = "LPub3D not found on PATH"
 
 
 def run_claude_subprocess(prompt: str, image_path: str) -> str:
@@ -89,7 +92,30 @@ def run_lpub3d(ldr_path: str, output_dir: str) -> str:
         Path to the generated PDF file.
 
     Raises:
-        RuntimeError: If LPub3D is not found or PDF generation fails.
+        RuntimeError: If LPub3D is not found on PATH, the render fails,
+            or no PDF is produced.
     """
-    # Implemented in Step 9
-    raise NotImplementedError("run_lpub3d not yet implemented (Step 9)")
+    lpub3d_cmd: str | None = None
+    for cmd_name in ("lpub3d", "lpub3d.exe"):
+        if shutil.which(cmd_name):
+            lpub3d_cmd = cmd_name
+            break
+    if lpub3d_cmd is None:
+        raise RuntimeError(_LPUB3D_NOT_FOUND_MSG)
+
+    try:
+        result = subprocess.run(
+            [lpub3d_cmd, "-pdf", "-o", output_dir, ldr_path],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("LPub3D timed out after 120s") from exc
+    if result.returncode != 0:
+        raise RuntimeError(f"LPub3D failed: {result.stderr}")
+
+    pdfs = glob.glob(os.path.join(output_dir, "*.pdf"))
+    if not pdfs:
+        raise RuntimeError(f"LPub3D exited 0 but no .pdf found in {output_dir}")
+    return pdfs[0]

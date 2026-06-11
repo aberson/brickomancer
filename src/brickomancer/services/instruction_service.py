@@ -1,10 +1,14 @@
-"""Instruction service — generates PDF instruction books via LPub3D.
-
-Implemented in Step 9.
-"""
+"""Instruction service — generates PDF instruction books via LPub3D."""
 
 
-def generate_pdf(ldr_path: str, output_dir: str) -> str:  # type: ignore[empty-body]
+from brickomancer.utils.subprocess_utils import _LPUB3D_NOT_FOUND_MSG, run_lpub3d
+
+
+class ToolUnavailableError(Exception):
+    """Raised when a required external tool is not installed or not on PATH."""
+
+
+def generate_pdf(ldr_path: str, output_dir: str) -> str:
     """Generate a step-by-step instruction PDF from an LDraw file.
 
     Args:
@@ -16,5 +20,11 @@ def generate_pdf(ldr_path: str, output_dir: str) -> str:  # type: ignore[empty-b
 
     Raises:
         ToolUnavailableError: If LPub3D is not on PATH.
+        RuntimeError: If LPub3D fails for any other reason.
     """
-    ...
+    try:
+        return run_lpub3d(ldr_path, output_dir)
+    except RuntimeError as exc:
+        if _LPUB3D_NOT_FOUND_MSG in str(exc):
+            raise ToolUnavailableError(str(exc)) from exc
+        raise
