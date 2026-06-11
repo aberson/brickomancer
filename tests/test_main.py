@@ -67,23 +67,32 @@ def test_static_tmp_route_exists(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_generate_from_image_stub_returns_501(client: TestClient) -> None:
-    """POST /api/generate/from-image returns 501 (stub)."""
+def test_generate_from_image_missing_body_returns_422(client: TestClient) -> None:
+    """POST /api/generate/from-image with no image file returns 422 (validation)."""
     response = client.post("/api/generate/from-image")
-    assert response.status_code == 501
+    assert response.status_code == 422
 
 
-def test_generate_from_text_stub_returns_501(client: TestClient) -> None:
-    """POST /api/generate/from-text returns 501 (stub)."""
-    response = client.post(
-        "/api/generate/from-text",
-        json={"description": "a blue birthday cake"},
-    )
-    assert response.status_code == 501
+def test_generate_from_text_returns_503_when_llama_unavailable(
+    client: TestClient,
+) -> None:
+    """Route promotes ServiceUnavailableError from text_pipeline to HTTP 503."""
+    from brickomancer.services.text_pipeline import ServiceUnavailableError
+
+    with patch(
+        "brickomancer.routers.generate.text_pipeline.run",
+        side_effect=ServiceUnavailableError("llama-server down"),
+    ):
+        response = client.post(
+            "/api/generate/from-text",
+            json={"description": "a blue birthday cake"},
+        )
+    assert response.status_code == 503
+    assert "llama-server down" in response.json()["detail"]
 
 
-def test_generate_instructions_stub_returns_501_with_valid_id(client: TestClient) -> None:
-    """POST /api/generate/instructions returns 501 (stub) for a valid suggestion_id."""
+def test_generate_instructions_returns_404_for_missing_ldr(client: TestClient) -> None:
+    """POST /api/generate/instructions returns 404 when LDR file does not exist."""
     import uuid
 
     suggestion_id = f"{uuid.uuid4()}_1"
@@ -91,7 +100,7 @@ def test_generate_instructions_stub_returns_501_with_valid_id(client: TestClient
         "/api/generate/instructions",
         json={"suggestion_id": suggestion_id},
     )
-    assert response.status_code == 501
+    assert response.status_code == 404
 
 
 def test_generate_instructions_validates_uuid_prefix(client: TestClient) -> None:
@@ -113,6 +122,58 @@ def test_generate_instructions_validates_non_integer_tier(client: TestClient) ->
         json={"suggestion_id": suggestion_id},
     )
     assert response.status_code == 422
+
+
+def test_generate_instructions_validates_missing_underscore(
+    client: TestClient,
+) -> None:
+    """POST /api/generate/instructions returns 422 when suggestion_id has no underscore."""
+    response = client.post(
+        "/api/generate/instructions",
+        json={"suggestion_id": "badinput"},
+    )
+    assert response.status_code == 422
+
+
+def test_generate_from_text_returns_suggestions_on_success(
+    client: TestClient,
+) -> None:
+    """Route returns GenerateResponse when text_pipeline and suggestion_service succeed."""
+    import numpy as np
+
+    from brickomancer.models.schemas import PartCount, Suggestion
+
+    fake_grid = np.zeros((5, 5, 5), dtype=bool)
+    fake_suggestions = [
+        Suggestion(
+            id="abc_0",
+            tier="compact",
+            preview_url="",
+            parts_count=3,
+            parts_list=[PartCount(part_id="3005", color_name="White", color_hex="F4F4F4", qty=3)],
+        )
+    ]
+
+    with (
+        patch(
+            "brickomancer.routers.generate.text_pipeline.run",
+            return_value=fake_grid,
+        ),
+        patch(
+            "brickomancer.routers.generate.suggestion_service.generate_suggestions",
+            return_value=fake_suggestions,
+        ),
+    ):
+        response = client.post(
+            "/api/generate/from-text",
+            json={"description": "a red car"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "suggestions" in body
+    assert len(body["suggestions"]) == 1
+    assert body["suggestions"][0]["tier"] == "compact"
 
 
 def test_colors_endpoint_returns_200(client: TestClient) -> None:
