@@ -1,7 +1,9 @@
 """Subprocess utilities for calling external tools (Claude CLI, LDView, LPub3D)."""
 
 import os
+import shutil
 import subprocess
+from pathlib import Path
 
 
 def run_claude_subprocess(prompt: str, image_path: str) -> str:
@@ -46,10 +48,34 @@ def run_ldview(ldr_path: str, output_png: str) -> None:
         output_png: Path where the output PNG should be written.
 
     Raises:
-        RuntimeError: If LDView is not found or the render fails.
+        RuntimeError: If LDView is not found on PATH or the render fails.
     """
-    # Implemented in Step 8
-    raise NotImplementedError("run_ldview not yet implemented (Step 8)")
+    ldview_cmd: str | None = None
+    for cmd_name in ("ldview", "LDView", "ldview.exe"):
+        if shutil.which(cmd_name):
+            ldview_cmd = cmd_name
+            break
+    if ldview_cmd is None:
+        raise RuntimeError("LDView not found on PATH")
+
+    result = subprocess.run(
+        [
+            ldview_cmd,
+            ldr_path,
+            f"-SaveSnapshot={output_png}",
+            "-ExportFile=1",
+            "-SaveWidth=400",
+            "-SaveHeight=300",
+            "-AutoCrop=1",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"LDView failed: {result.stderr}")
+    if not Path(output_png).exists():
+        raise RuntimeError(f"LDView exited 0 but did not write {output_png}")
 
 
 def run_lpub3d(ldr_path: str, output_dir: str) -> str:
