@@ -1,8 +1,14 @@
 """Subprocess utilities for calling external tools (Claude CLI, LDView, LPub3D)."""
 
+import os
+import subprocess
+
 
 def run_claude_subprocess(prompt: str, image_path: str) -> str:
     """Call the Claude CLI subprocess for piece detection.
+
+    Reads CLAUDE_CODE_OAUTH_TOKEN from the environment (loaded from .env at
+    startup by python-dotenv in main.py).
 
     Args:
         prompt: The prompt text to send to Claude.
@@ -12,10 +18,24 @@ def run_claude_subprocess(prompt: str, image_path: str) -> str:
         Raw string output from Claude (expected to be JSON).
 
     Raises:
-        RuntimeError: If the subprocess fails after retries.
+        RuntimeError: If CLAUDE_CODE_OAUTH_TOKEN is not set.
+        RuntimeError: If the subprocess exits with a non-zero return code.
     """
-    # Implemented in Step 7
-    raise NotImplementedError("run_claude_subprocess not yet implemented (Step 7)")
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    if not token:
+        raise RuntimeError("CLAUDE_CODE_OAUTH_TOKEN not set")
+
+    cmd = ["claude", "-p", prompt, "--image", image_path]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": token},
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"claude subprocess failed: {result.stderr}")
+    return result.stdout
 
 
 def run_ldview(ldr_path: str, output_png: str) -> None:
