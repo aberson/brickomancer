@@ -115,8 +115,8 @@ def test_generate_instructions_validates_non_integer_tier(client: TestClient) ->
     assert response.status_code == 422
 
 
-def test_colors_stub_returns_empty_list(client: TestClient) -> None:
-    """GET /api/colors returns [] (stub)."""
+def test_colors_endpoint_returns_200(client: TestClient) -> None:
+    """GET /api/colors returns 200 with a list (data layer wired)."""
     response = client.get("/api/colors")
     assert response.status_code == 200
-    assert response.json() == []
+    assert isinstance(response.json(), list)

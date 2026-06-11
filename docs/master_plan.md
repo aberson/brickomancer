@@ -459,6 +459,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 - **Produces:** `scripts/download_data.py`, `src/brickomancer/services/data_service.py`, `tests/test_data_service.py`
 - **Done when:** `uv run python scripts/download_data.py` completes and all 5 files appear in `data/`; `data_service.list_colors()` returns ≥100 entries each with non-empty hex; `get_color(15)` returns White with hex `F4F4F4`; unit tests pass
 - **Depends on:** Step 1
+- **Status:** DONE (2026-06-11)
 
 <!-- autofix-applied: 2026-06-11 -->
 ### Step 3: Color mapping module

@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from brickomancer.routers import generate, info
+from brickomancer.services import data_service
 from brickomancer.utils.temp_dir import TMP_DIR, TempDir  # noqa: F401
 
 load_dotenv()
@@ -42,9 +43,10 @@ def _sweep_old_tmp_dirs() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Run startup tasks: create tmp dir and sweep old tmp dirs."""
+    """Run startup tasks: create tmp dir, sweep old tmp dirs, warm data service."""
     TMP_DIR.mkdir(exist_ok=True)
     _sweep_old_tmp_dirs()
+    await asyncio.to_thread(data_service.initialize)
     yield
 
 
