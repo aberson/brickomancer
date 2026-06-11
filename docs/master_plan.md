@@ -470,6 +470,7 @@ Build via `/build-phase --plan master_plan.md`. All automated steps use `--revie
 - **Produces:** `src/brickomancer/services/color_service.py`, `tests/test_color_service.py`
 - **Done when:** `extract_colors("tests/integration/fixtures/cake.jpg")` returns dominant colors that include matches to White, Yellow, and a blue variant (Light Bluish Gray or similar); `match_color("F4F4F4")` → White (id=15); unit tests pass including Lab-space conversion
 - **Depends on:** Step 2
+- **Status:** DONE (2026-06-11)
 
 <!-- autofix-applied: 2026-06-11 -->
 ### Step 4: Image → 3D pipeline
