@@ -26,9 +26,9 @@ uv sync                                           # Install Python deps
 cd frontend; npm install; cd ..                   # Install JS deps
 uv run python scripts/download_data.py            # Fetch Rebrickable CSVs + LDConfig.ldr
 
-# Run
-uv run fastapi dev src/brickomancer/main.py       # Backend → http://localhost:8000
-cd frontend; npm run dev                          # Frontend → http://localhost:5173
+# Run (Windows — fastapi dev fails on cp1252 terminals due to emoji; use uvicorn directly)
+uv run uvicorn --app-dir src brickomancer.main:app --reload  # Backend → http://localhost:8000
+cd frontend; npm run dev                                     # Frontend → http://localhost:5173
 
 # Quality gates
 uv run pytest -q
@@ -75,7 +75,7 @@ brickomancer/
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11). Full pipeline implemented: image/text → voxels → brick pack → LDraw → LDView previews → suggestion cards → LPub3D instruction PDF. React 4-step UI wired. 176 unit tests passing, 0 type errors, 0 lint violations. Integration smoke tests in `tests/integration/` (skip when services unavailable). Pending: Step M1 manual UAT (run both servers, verify full workflow in browser).
+Steps 1–11 complete (2026-06-11). Full pipeline implemented: image/text → voxels → brick pack → LDraw → LDView previews → suggestion cards → LPub3D instruction PDF. React 4-step UI wired. 180 unit tests passing, 0 type errors, 0 lint violations. Integration smoke tests in `tests/integration/` (skip when services unavailable). Pending: Step M1 manual UAT (requires TripoSR+rembg[gpu] install, LDView+LPub3D on PATH, llama-server running). Bug fix (2026-06-12): RuntimeError from run_ldview now returns 503 instead of 500.
 
 ## Environment requirements
 
