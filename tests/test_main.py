@@ -176,6 +176,80 @@ def test_generate_from_text_returns_suggestions_on_success(
     assert body["suggestions"][0]["tier"] == "compact"
 
 
+def test_generate_from_image_returns_503_when_triposr_missing(
+    client: TestClient,
+) -> None:
+    """Route promotes ImportError from image_pipeline to HTTP 503."""
+    with patch(
+        "brickomancer.routers.generate.image_pipeline.run",
+        side_effect=ImportError("TripoSR is not installed"),
+    ):
+        response = client.post(
+            "/api/generate/from-image",
+            data={"height_studs": "8"},
+            files={"image": ("cake.jpg", b"fake", "image/jpeg")},
+        )
+    assert response.status_code == 503
+    assert "TripoSR" in response.json()["detail"]
+
+
+def test_generate_from_image_returns_503_when_ldview_missing(
+    client: TestClient,
+) -> None:
+    """Route promotes RuntimeError (LDView absent) from suggestion_service to HTTP 503."""
+    import numpy as np
+
+    fake_grid = np.zeros((5, 5, 5), dtype=bool)
+
+    with (
+        patch(
+            "brickomancer.routers.generate.image_pipeline.run",
+            return_value=fake_grid,
+        ),
+        patch(
+            "brickomancer.routers.generate.color_service.extract_colors",
+            return_value=[],
+        ),
+        patch(
+            "brickomancer.routers.generate.suggestion_service.generate_suggestions",
+            side_effect=RuntimeError("LDView not found on PATH"),
+        ),
+    ):
+        response = client.post(
+            "/api/generate/from-image",
+            data={"height_studs": "8"},
+            files={"image": ("cake.jpg", b"fake", "image/jpeg")},
+        )
+    assert response.status_code == 503
+    assert "LDView" in response.json()["detail"]
+
+
+def test_generate_from_text_returns_503_when_ldview_missing(
+    client: TestClient,
+) -> None:
+    """Route promotes RuntimeError (LDView absent) from suggestion_service to HTTP 503."""
+    import numpy as np
+
+    fake_grid = np.zeros((5, 5, 5), dtype=bool)
+
+    with (
+        patch(
+            "brickomancer.routers.generate.text_pipeline.run",
+            return_value=fake_grid,
+        ),
+        patch(
+            "brickomancer.routers.generate.suggestion_service.generate_suggestions",
+            side_effect=RuntimeError("LDView not found on PATH"),
+        ),
+    ):
+        response = client.post(
+            "/api/generate/from-text",
+            json={"description": "a blue cake"},
+        )
+    assert response.status_code == 503
+    assert "LDView" in response.json()["detail"]
+
+
 def test_colors_endpoint_returns_200(client: TestClient) -> None:
     """GET /api/colors returns 200 with a list (data layer wired)."""
     response = client.get("/api/colors")

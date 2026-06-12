@@ -66,9 +66,12 @@ async def generate_from_image(
     if piece_paths:
         piece_inventory = piece_detector.detect_pieces(piece_paths)
 
-    suggestions = suggestion_service.generate_suggestions(
-        grid, colors, tmp_path, request_id, piece_inventory
-    )
+    try:
+        suggestions = suggestion_service.generate_suggestions(
+            grid, colors, tmp_path, request_id, piece_inventory
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return GenerateResponse(suggestions=suggestions)
 
 
@@ -93,9 +96,12 @@ async def generate_from_text(request: GenerateTextRequest) -> GenerateResponse:
         cluster_weight=1.0,
     )
 
-    suggestions = suggestion_service.generate_suggestions(
-        grid, [default_color], tmp_path, request_id
-    )
+    try:
+        suggestions = suggestion_service.generate_suggestions(
+            grid, [default_color], tmp_path, request_id
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return GenerateResponse(suggestions=suggestions)
 
 
