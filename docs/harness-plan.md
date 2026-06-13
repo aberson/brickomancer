@@ -325,6 +325,7 @@ that need the LDR file read it as plain text.
   server already up on 8005 produces a non-empty PDF at
   `runs/iteration_1/instructions.pdf` and a non-empty `preview.png`
 - **Depends on:** 13
+- **Status:** DONE (2026-06-13)
 
 <!-- autofix-applied: 2026-06-12 -->
 ### Step 15: Multi-advisor review engine

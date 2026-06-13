@@ -13,6 +13,7 @@ import argparse
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -27,6 +28,8 @@ import httpx
 # ---------------------------------------------------------------------------
 
 HARNESS_DIR = Path(__file__).parent
+PROJECT_ROOT = HARNESS_DIR.parent.parent
+TMP_DIR_PATH = PROJECT_ROOT / "tmp"
 RUNS_DIR = HARNESS_DIR / "runs"
 SCORES_JSONL = HARNESS_DIR / "scores.jsonl"
 SERVER_LOG = HARNESS_DIR / "server.log"
@@ -54,8 +57,86 @@ log = logging.getLogger("harness")
 
 
 def pipeline_executor(iteration_dir: Path) -> dict[str, Any]:
-    """Run the full pipeline for one iteration and return iteration state."""
-    raise NotImplementedError("pipeline_executor is not yet implemented")
+    """Run the full pipeline for one iteration and return iteration state.
+
+    Steps:
+    1. POST /api/generate/from-image with the cake.jpg fixture.
+    2. Extract the compact suggestion from the response.
+    3. POST /api/generate/instructions for the compact suggestion.
+    4. Save the returned PDF to iteration_dir/instructions.pdf.
+    5. Copy the preview PNG from tmp/<uuid_part>/suggestion_0_preview.png if present.
+    6. Return a dict with iteration state for downstream advisors.
+    """
+    fixture_path = HARNESS_DIR.parent / "integration" / "fixtures" / "cake.jpg"
+
+    # --- Step 1: POST /from-image ---
+    with httpx.Client(timeout=300.0) as client:
+        log.info("pipeline_executor: POSTing to /api/generate/from-image …")
+        with fixture_path.open("rb") as img_fh:
+            response = client.post(
+                f"{SERVER_URL}/api/generate/from-image",
+                files={"image": ("cake.jpg", img_fh, "image/jpeg")},
+                data={"height_studs": "8"},
+            )
+        response.raise_for_status()
+        generate_data: dict[str, Any] = response.json()
+
+    # --- Step 2: Extract compact suggestion ---
+    suggestions: list[dict[str, Any]] = generate_data.get("suggestions", [])
+    compact_suggestion: dict[str, Any] | None = next(
+        (s for s in suggestions if s.get("tier") == "compact"), None
+    )
+    if compact_suggestion is None:
+        raise ValueError("No compact suggestion in response")
+
+    suggestion_id: str = compact_suggestion["id"]
+    # suggestion_id format: "<uuid>_0"  — split on last "_" to get uuid_part
+    uuid_part, _tier_index = suggestion_id.rsplit("_", 1)
+
+    # --- Step 3: POST /instructions ---
+    with httpx.Client(timeout=120.0) as client:
+        log.info(
+            "pipeline_executor: POSTing to /api/generate/instructions (suggestion_id=%s) …",
+            suggestion_id,
+        )
+        instr_response = client.post(
+            f"{SERVER_URL}/api/generate/instructions",
+            json={"suggestion_id": suggestion_id},
+        )
+        instr_response.raise_for_status()
+        pdf_bytes = instr_response.content
+        if not pdf_bytes:
+            raise ValueError("instructions endpoint returned empty PDF bytes")
+
+    # --- Step 4: Save PDF ---
+    pdf_path = iteration_dir / "instructions.pdf"
+    pdf_path.write_bytes(pdf_bytes)
+    log.info("pipeline_executor: PDF saved → %s (%d bytes)", pdf_path, len(pdf_bytes))
+
+    # --- Step 5: Copy preview PNG ---
+    preview_src = TMP_DIR_PATH / uuid_part / "suggestion_0_preview.png"
+    preview_dst = iteration_dir / "preview.png"
+    if preview_src.exists():
+        shutil.copy2(preview_src, preview_dst)
+        log.info("pipeline_executor: Preview PNG copied → %s", preview_dst)
+        preview_png_path = str(preview_dst)
+    else:
+        log.warning(
+            "pipeline_executor: Preview PNG not found at %s — continuing without it.",
+            preview_src,
+        )
+        preview_png_path = None
+
+    # --- Step 6: LDR file path ---
+    ldr_path = str(TMP_DIR_PATH / uuid_part / "suggestion_0.ldr")
+
+    return {
+        "suggestion_id": suggestion_id,
+        "uuid_part": uuid_part,
+        "ldr_path": ldr_path,
+        "preview_png_path": preview_png_path,
+        "pdf_path": str(pdf_path),
+    }
 
 
 def advisor_engine(iteration_dir: Path, iteration_state: dict[str, Any]) -> dict[str, Any]:
