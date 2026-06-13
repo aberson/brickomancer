@@ -15,6 +15,7 @@ import json
 import logging
 import math
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -45,8 +46,32 @@ POLL_INTERVAL_S = 2.0
 QUALITY_THRESHOLD = 8.0
 ADVISORS_YAML = HARNESS_DIR / "advisors.yaml"
 ADVISOR_TIMEOUT_S = 30
+DEVELOPER_TIMEOUT_S = 120
 
 _INPUT_IMAGE_PATH = HARNESS_DIR.parent / "integration" / "fixtures" / "cake.jpg"
+
+# Static dimension → primary source files mapping (relative to PROJECT_ROOT)
+DIMENSION_SOURCE_FILES: dict[str, list[str]] = {
+    "shape_fidelity": ["src/brickomancer/services/image_pipeline.py"],
+    "part_variety": ["src/brickomancer/services/brick_packer.py"],
+    "build_stability": [
+        "src/brickomancer/services/brick_packer.py",
+        "src/brickomancer/services/ldraw_writer.py",
+    ],
+    "instruction_clarity": ["src/brickomancer/services/ldraw_writer.py"],
+    "aesthetics": [
+        "src/brickomancer/services/suggestion_service.py",
+        "src/brickomancer/utils/subprocess_utils.py",
+    ],
+    "pdf_completeness": [
+        "src/brickomancer/services/ldraw_writer.py",
+        "src/brickomancer/utils/subprocess_utils.py",
+    ],
+    "technical_validity": [
+        "src/brickomancer/services/ldraw_writer.py",
+        "src/brickomancer/services/brick_packer.py",
+    ],
+}
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -392,9 +417,194 @@ def advisor_engine(iteration_dir: Path, iteration_state: dict[str, Any]) -> dict
     return report
 
 
+def _dev_skip(dimension: str, reason: str, summary: str | None = None) -> dict[str, Any]:
+    return {"selected_dimension": dimension, "change_summary": summary, "test_result": reason}
+
+
+def _select_dimension(weights: dict[str, float]) -> str:
+    """Sample one dimension id proportional to its weight."""
+    ids = list(weights.keys())
+    w_vals = [weights[aid] for aid in ids]
+    total = sum(w_vals)
+    if total <= 0.0:
+        return random.choice(ids)
+    return random.choices(ids, weights=w_vals, k=1)[0]
+
+
+def _parse_developer_output(output: str) -> dict[str, Any] | None:
+    """Extract JSON with a 'changes' key from developer agent output."""
+    try:
+        parsed = json.loads(output)
+        if isinstance(parsed, dict) and "changes" in parsed:
+            return parsed
+    except (json.JSONDecodeError, ValueError):
+        pass
+    # Scan from first '{' to last '}', working inward on failure
+    start = output.find("{")
+    if start == -1:
+        return None
+    end = output.rfind("}")
+    while end > start:
+        try:
+            parsed = json.loads(output[start : end + 1])
+            if isinstance(parsed, dict) and "changes" in parsed:
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+        end = output.rfind("}", 0, end)
+    return None
+
+
 def developer_agent(advisor_results: dict[str, Any], iteration: int) -> dict[str, Any]:
-    """Use advisor results to propose and apply code/config improvements."""
-    raise NotImplementedError("developer_agent is not yet implemented")
+    """Sample the weakest dimension, invoke Claude to improve it, and apply the change.
+
+    Flow:
+    1. Weighted-random select one dimension from advisor_results['weights'].
+    2. Build a prompt with findings + relevant source file contents.
+    3. Invoke `claude -p` via CLAUDE_CODE_OAUTH_TOKEN subprocess (120s timeout).
+    4. Parse JSON response: {changes: [{file_path, content}], summary: str}.
+    5. Write changed file to disk.
+    6. Run pytest quality gate (uv run pytest -q --tb=short).
+    7. If pass: git add + git commit.  If fail: git checkout -- <file> + log revert.
+    8. Return {selected_dimension, change_summary, test_result}.
+    """
+    dimension = _select_dimension(advisor_results.get("weights", {}))
+    advisor_data = advisor_results.get("advisors", {}).get(dimension, {})
+    normalized_score = advisor_data.get("normalized_score", 5.0)
+    findings = advisor_data.get("findings", [])
+
+    source_rel_paths = DIMENSION_SOURCE_FILES.get(dimension, [])
+    file_contents: dict[str, str] = {}
+    for rel in source_rel_paths:
+        abs_p = PROJECT_ROOT / rel
+        if abs_p.exists():
+            try:
+                file_contents[rel] = abs_p.read_text(encoding="utf-8")
+            except OSError:
+                file_contents[rel] = f"[Could not read {rel}]"
+        else:
+            file_contents[rel] = f"[File not found: {rel}]"
+
+    file_sections = "\n\n".join(
+        f"--- {rel} ---\n{content}\n--- end {rel} ---"
+        for rel, content in file_contents.items()
+    )
+    findings_text = "\n".join(f"- {f}" for f in findings) if findings else "(no findings)"
+    valid_paths = list(file_contents.keys())
+
+    prompt = (
+        f"You are a developer improving a LEGO instruction PDF generator.\n\n"
+        f"Selected quality dimension: {dimension}\n"
+        f"Normalized score: {normalized_score:.1f}/10 (lower = more room to improve)\n\n"
+        f"Advisor findings:\n{findings_text}\n\n"
+        f"Source files:\n{file_sections}\n\n"
+        f"Task: make EXACTLY ONE targeted code change to improve the \"{dimension}\" dimension.\n"
+        f"Study the findings, then make a single focused improvement in one source file.\n"
+        f"Do not add explanatory comments. Do not modify unrelated code.\n\n"
+        f"Output ONLY valid JSON on a single line:\n"
+        f'  {{"changes": [{{"file_path": "<path>", "content": "<complete file>"}}], '
+        f'"summary": "<one sentence>"}}\n\n'
+        f"Rules: file_path must be one of {valid_paths}; "
+        f"content is the COMPLETE new file (not a diff); exactly ONE entry in changes."
+    )
+
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    if not token:
+        log.warning("CLAUDE_CODE_OAUTH_TOKEN not set — developer_agent skipping iter %d", iteration)
+        return _dev_skip(dimension, "SKIPPED_NO_TOKEN")
+
+    env = {**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": token}
+    try:
+        dev_proc = subprocess.run(
+            ["claude", "-p", prompt],
+            capture_output=True,
+            text=True,
+            timeout=DEVELOPER_TIMEOUT_S,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("developer_agent timed out on iteration %d", iteration)
+        return _dev_skip(dimension, "SKIPPED_TIMEOUT")
+    except OSError as exc:
+        log.warning("developer_agent subprocess error: %s", exc)
+        return _dev_skip(dimension, f"SKIPPED_ERROR: {exc}")
+
+    if dev_proc.returncode != 0:
+        log.warning("developer_agent exited %d: %s", dev_proc.returncode, dev_proc.stderr[:200])
+        return _dev_skip(dimension, f"SKIPPED_SUBPROCESS_FAILED: exit={dev_proc.returncode}")
+
+    changes_data = _parse_developer_output(dev_proc.stdout.strip())
+    if changes_data is None:
+        log.warning("developer_agent unparseable output: %s", dev_proc.stdout[:300])
+        return _dev_skip(dimension, "SKIPPED_PARSE_ERROR")
+
+    changes: list[dict[str, Any]] = changes_data.get("changes", [])
+    summary: str = str(changes_data.get("summary", "(no summary)"))
+
+    if not changes:
+        log.warning("developer_agent returned empty changes list")
+        return _dev_skip(dimension, "SKIPPED_NO_CHANGES", summary)
+
+    change = changes[0]
+    rel_path: str = change.get("file_path", "")
+    new_content: str = change.get("content", "")
+    if not rel_path or not new_content:
+        return _dev_skip(dimension, "SKIPPED_INVALID_CHANGE", summary)
+
+    abs_target = PROJECT_ROOT / rel_path
+    if not abs_target.exists():
+        log.warning("developer_agent: target file does not exist: %s", abs_target)
+        return _dev_skip(dimension, "SKIPPED_FILE_NOT_FOUND", summary)
+
+    abs_target.write_text(new_content, encoding="utf-8")
+    log.info("developer_agent: wrote %s (%d chars)", rel_path, len(new_content))
+
+    test_proc = subprocess.run(
+        ["uv", "run", "pytest", "-q", "--tb=short"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        cwd=str(PROJECT_ROOT),
+    )
+
+    if test_proc.returncode == 0:
+        git_add = subprocess.run(
+            ["git", "add", rel_path],
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+        )
+        if git_add.returncode != 0:
+            log.warning("git add failed: %s", git_add.stderr[:200])
+            return _dev_skip(dimension, "PASS_ADD_FAILED", summary)
+
+        commit_msg = (
+            f"harness iter {iteration}: improve {dimension}"
+            f" (score was {normalized_score:.1f}/10)"
+        )
+        git_commit = subprocess.run(
+            ["git", "commit", "-m", commit_msg],
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+        )
+        if git_commit.returncode == 0:
+            log.info("developer_agent: committed iter %d (%s)", iteration, dimension)
+            test_result = "PASS_COMMITTED"
+        else:
+            log.warning("git commit failed: %s", git_commit.stderr[:200])
+            test_result = "PASS_COMMIT_FAILED"
+    else:
+        log.warning("Tests failed — reverting %s", rel_path)
+        subprocess.run(
+            ["git", "checkout", "--", rel_path],
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+        )
+        test_result = "SKIPPED_REVERT"
+
+    return {"selected_dimension": dimension, "change_summary": summary, "test_result": test_result}
 
 
 # ---------------------------------------------------------------------------
