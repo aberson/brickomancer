@@ -54,7 +54,7 @@ brickomancer/
     services/                 # color_service, data_service, image_pipeline,
                               # text_pipeline, brick_packer, ldraw_writer,
                               # piece_detector, suggestion_service, instruction_service
-    models/                   # schemas.py (Pydantic), brick.py (dataclasses)
+    models/                   # schemas.py (Pydantic), brick.py (dataclasses + BRICK_PART_IDS, TILE_PART_IDS)
     utils/                    # temp_dir.py, subprocess_utils.py
   frontend/src/
     components/               # WorkflowStepper, InputStep, PiecesStep,
@@ -85,7 +85,7 @@ brickomancer/
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes (2026-06-13). Quality hill-climbing harness fully operational: 7/7 advisors return real scores per iteration, weighted developer-agent loop, pytest gate (unit tests only — `--ignore=tests/integration`), avg-raw quality gate (stops when avg advisor score ≥ 8.0 / 7.0). Desktop launcher at `scripts/run_harness.bat`. `/run-harness` skill for one-command prep + launch + monitoring. 303 unit tests passing, 0 type errors, 0 lint violations.
+Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes (2026-06-13); first harness run complete + quality improvements (2026-06-13). Harness fully operational: 7/7 advisors (color_match replaces part_variety), weighted developer-agent loop, pytest gate (unit tests only), avg-raw quality gate (≥ 8.0). Top-surface bricks tile-smoothed via `_apply_surface_tiles()` (TILE_PART_IDS in brick.py). Desktop launcher at `scripts/run_harness.bat`. `/run-harness` skill for one-command prep + launch + monitoring. 303 unit tests passing, 0 type errors, 0 lint violations.
 
 **Harness image-passing note:** `claude -p` does not support `--image`. Images (preview PNG, input image) are passed as absolute paths in the prompt with "Use your Read tool to view this image." Same pattern used by PDF advisors. LDR content truncated to 400 lines before embedding. Advisor timeout 240s, developer timeout 300s.
 

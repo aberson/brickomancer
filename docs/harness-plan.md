@@ -549,3 +549,46 @@ Note: Pages-parameter PDF read was tried but broke PDF reading (requires `pdftop
 ### Step 18 calibration result (2026-06-13)
 
 No calibration changes needed. All advisors returned scores in 1–7 range with findings that narratively match the scores. `part_variety` scoring 1 consistently is correct, not miscalibration — the cake build uses only 4 rectangular brick types. No advisor scored 9–10 (too lenient). `advisors.yaml` unchanged.
+
+---
+
+## 11. First Harness Run + Quality Improvements (2026-06-13)
+
+### First real run — 5 iterations (cake.jpg)
+
+All 5 iterations ran with real advisor scores (7/7 advisors returning real results). One change committed: connectivity_repair deduplication logic in `brick_packer.py` (bce997b). Remaining 4 iterations: 3 SKIPPED_REVERT (pytest failed), 1 SKIPPED_PARSE_ERROR (developer agent JSON truncated due to file size).
+
+**Honest assessment:** Very little quality improvement across 5 iterations.
+
+Root cause: `part_variety` advisor consistently scored 1/7 (correct — the cake build uses only 4 rectangular brick types). Since z-score weighting almost always selected `part_variety`, the developer agent spent every iteration trying to diversify brick types — an architectural constraint that can't be solved by tweaking `brick_packer.py` without changing voxelization resolution or the overall packing strategy. The lowest-hanging fruit was a different advisor and a direct manual fix.
+
+### Three harness bugs identified (not fixed)
+
+1. **Dirty working tree after SKIPPED_PARSE_ERROR.** When `_parse_developer_output` returns `None`, the file is already written to disk but not reverted (revert logic only runs on SKIPPED_REVERT path). Manifested as iter 5 failing tests against iter 3's half-written `brick_packer.py` content. Workaround: `git checkout HEAD -- <file>` after the run.
+
+2. **DEVELOPER_TIMEOUT_S too tight.** 300s too short for complex source files — developer agent hits the limit before producing valid JSON for large modules.
+
+3. **JSON schema causes truncation.** Full file-content JSON schema (changes[].content) gets truncated for large source files, producing a SKIPPED_PARSE_ERROR instead of a usable diff.
+
+### Manual improvement 1 — Replace `part_variety` with `color_match` advisor
+
+`part_variety` replaced because the build is monochromatic yellow but the input cake image has multiple colors — a directly observable and fixable problem. New advisor reads `[preview_png, input_image]` and scores on dominant color accuracy, color count, and color family match vs. the input image.
+
+Files changed:
+- `tests/harness/advisors.yaml`: replaced `part_variety` advisor entry with `color_match`
+- `tests/harness/run_harness.py`: `DIMENSION_SOURCE_FILES` updated (`color_match` → `color_service.py · suggestion_service.py`)
+- `tests/harness/test_advisors.py`: `EXPECTED_IDS`, reads parametrize updated
+- `tests/harness/test_developer_agent.py`: all 5 `part_variety` references updated to `color_match`
+
+### Manual improvement 2 — `_apply_surface_tiles()` in brick_packer.py
+
+Iter 3's developer agent drafted `_apply_surface_tiles()` with the right idea but couldn't land it (SKIPPED_PARSE_ERROR). Implemented properly with `TILE_PART_IDS` as a public constant in `brick.py` (single source of truth, per code-quality conventions).
+
+Logic: scan all placements to find max Y per (x,z) stud, then replace any brick whose entire footprint sits at the top surface with the matching tile variant. Supported tile sizes: 1×1 (3070b), 1×2 (3069b), 1×3 (63864), 1×4 (2431), 2×2 (3068b), 2×4 (87079).
+
+Files changed:
+- `src/brickomancer/models/brick.py`: added `TILE_PART_IDS` dict
+- `src/brickomancer/services/brick_packer.py`: added `_apply_surface_tiles()`, called after `connectivity_repair()` at end of `pack()`; updated import
+- `tests/test_brick_packer.py`: `test_part_ids_valid` extended to accept `TILE_PART_IDS` values; import updated
+
+Commit: 19b840a. 303 unit tests passing, 0 type errors, 0 lint violations.

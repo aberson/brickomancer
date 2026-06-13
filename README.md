@@ -117,4 +117,4 @@ scripts/
 
 ## Status
 
-**Harness Steps 12–18 complete + post-build fixes** — issues #17–25 closed. Quality hill-climbing harness fully operational: 7-advisor parallel scoring, weighted developer agent, per-iteration pytest gate (unit tests only), avg-raw quality gate. `/run-harness` skill for one-command prep + launch + monitoring. Desktop launcher at `scripts/run_harness.bat`. 303 tests passing, 0 type errors, 0 lint violations.
+**Surface tiles + color_match advisor** — First harness run complete; top-surface bricks tile-smoothed via `_apply_surface_tiles()`; `part_variety` advisor replaced with `color_match` (reads preview + input image). 303 tests passing, 0 type errors, 0 lint violations.
