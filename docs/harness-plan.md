@@ -352,6 +352,7 @@ that need the LDR file read it as plain text.
   7 advisors present, raw + normalized scores, weights; `pytest tests/harness/
   test_advisor_engine.py` passes (unit tests for normalization + weight computation)
 - **Depends on:** 12, 14
+- **Status:** DONE (2026-06-13)
 
 <!-- autofix-applied: 2026-06-12 -->
 ### Step 16: Weighted selector + developer agent integration
