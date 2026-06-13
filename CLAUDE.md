@@ -69,13 +69,14 @@ brickomancer/
 
 **External services (must be running/on PATH before starting backend):**
 - `llama-server` on port 8080 with Llama 3.2-1B GGUF (void_furnace llama.cpp setup)
-- `LDView` or `ldview.exe` on PATH
-- `lpub3d` on PATH
-- `CLAUDE_CODE_OAUTH_TOKEN` in `.env` (for piece detection subprocess)
+- `LDView` auto-detected at `C:\Tools\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe` (no PATH needed)
+- `LPub3D.exe` on PATH (install at `C:\Tools\LPub3D\`; add to `$env:PATH` before starting server)
+- `CLAUDE_CODE_OAUTH_TOKEN` in `.env` (for piece detection subprocess; never ANTHROPIC_API_KEY)
+- Start server WITHOUT `--reload` — WatchFiles subprocess does not inherit session PATH
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11). Full pipeline implemented: image/text → voxels → brick pack → LDraw → LDView previews → suggestion cards → LPub3D instruction PDF. React 4-step UI wired. 180 unit tests passing, 0 type errors, 0 lint violations. Integration smoke tests in `tests/integration/` (skip when services unavailable). Pending: Step M1 manual UAT (requires TripoSR+rembg[gpu] install, LDView+LPub3D on PATH, llama-server running). Bug fix (2026-06-12): RuntimeError from run_ldview now returns 503 instead of 500.
+Steps 1–11 complete (2026-06-11). Full pipeline implemented: image/text → voxels → brick pack → LDraw → LDView previews → suggestion cards → LPub3D instruction PDF. React 4-step UI wired. 182 unit tests passing, 0 type errors, 0 lint violations. Integration smoke tests in `tests/integration/` (skip when services unavailable). M1 UAT in progress (2026-06-12): TripoSR installed, rembg[cpu] installed, LDView rendering confirmed (yellow bricks), LDConfig.ldr committed. Remaining M1 steps: PDF endpoint test, llama-server text pipeline test, full browser UI test.
 
 ## Environment requirements
 

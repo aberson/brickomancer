@@ -79,7 +79,8 @@ class TestRunLpub3d:
         return mock_result
 
     def test_returns_pdf_path_on_success(self, tmp_path):
-        """When lpub3d exits 0 and a .pdf exists, return its path."""
+        """When lpub3d exits 0 and a .pdf exists next to the ldr file, return its path."""
+        ldr_path = str(tmp_path / "model.ldr")
         pdf_file = tmp_path / "model.pdf"
         pdf_file.write_bytes(b"%PDF-1.4")
 
@@ -89,7 +90,7 @@ class TestRunLpub3d:
             "brickomancer.utils.subprocess_utils.subprocess.run",
             return_value=mock_result,
         ):
-            result = run_lpub3d("model.ldr", str(tmp_path))
+            result = run_lpub3d(ldr_path, str(tmp_path))
 
         assert result.endswith(".pdf")
         assert os.path.basename(result) == "model.pdf"
@@ -124,6 +125,7 @@ class TestRunLpub3d:
 
     def test_uses_lpub3d_exe_fallback(self, tmp_path):
         """Falls back to 'lpub3d.exe' when 'lpub3d' is not found."""
+        ldr_path = str(tmp_path / "model.ldr")
         pdf_file = tmp_path / "out.pdf"
         pdf_file.write_bytes(b"%PDF-1.4")
 
@@ -136,7 +138,7 @@ class TestRunLpub3d:
             "brickomancer.utils.subprocess_utils.subprocess.run",
             return_value=mock_result,
         ) as mock_run:
-            result = run_lpub3d("model.ldr", str(tmp_path))
+            result = run_lpub3d(ldr_path, str(tmp_path))
 
         cmd = mock_run.call_args.args[0]
         assert cmd[0] == "lpub3d.exe"
@@ -152,7 +154,11 @@ class TestRunLpub3d:
                 run_lpub3d("model.ldr", str(tmp_path))
 
     def test_command_format(self, tmp_path):
-        """Verify the subprocess is called with the correct argument order."""
+        """Verify the subprocess is called with the correct argument order.
+
+        LPub3D uses '-pe pdf <ldr_path>' — no -o flag; output goes next to the ldr file.
+        """
+        ldr_path = str(tmp_path / "model.ldr")
         pdf_file = tmp_path / "model.pdf"
         pdf_file.write_bytes(b"%PDF-1.4")
 
@@ -162,12 +168,11 @@ class TestRunLpub3d:
             "brickomancer.utils.subprocess_utils.subprocess.run",
             return_value=mock_result,
         ) as mock_run:
-            run_lpub3d("/path/to/model.ldr", str(tmp_path))
+            run_lpub3d(ldr_path, str(tmp_path))
 
         cmd = mock_run.call_args.args[0]
         assert cmd[0] == "lpub3d"
-        assert "-pdf" in cmd
-        assert "-o" in cmd
-        o_idx = cmd.index("-o")
-        assert cmd[o_idx + 1] == str(tmp_path)
-        assert cmd[-1] == "/path/to/model.ldr"
+        assert "-pe" in cmd
+        pe_idx = cmd.index("-pe")
+        assert cmd[pe_idx + 1] == "pdf"
+        assert cmd[-1] == ldr_path

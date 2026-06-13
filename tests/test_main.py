@@ -255,3 +255,20 @@ def test_colors_endpoint_returns_200(client: TestClient) -> None:
     response = client.get("/api/colors")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+
+def test_onnxruntime_gpu_not_installed() -> None:
+    """onnxruntime-gpu must not be installed — it requires CUDA 12 but the project uses CUDA 11.8.
+
+    The GPU package ships onnxruntime_providers_cuda.dll which depends on cublasLt64_12.dll.
+    On a CUDA 11.8 system that DLL is absent, causing a loud error at every server startup.
+    The project uses rembg[cpu] which pulls in onnxruntime (CPU) instead.
+    """
+    import importlib.metadata
+
+    dist_map = importlib.metadata.packages_distributions()
+    gpu_dists = dist_map.get("onnxruntime_gpu") or dist_map.get("onnxruntime-gpu")
+    assert gpu_dists is None, (
+        "onnxruntime-gpu is installed but must not be — it requires CUDA 12. "
+        "Run `uv sync` to replace it with the CPU package via rembg[cpu]."
+    )

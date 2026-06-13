@@ -39,11 +39,16 @@ DOWNLOADS: list[tuple[str, Path, bool]] = [
         DATA_REBRICKABLE / "inventory_parts.csv",
         True,
     ),
-    (
-        "https://library.ldraw.org/library/official/LDConfig.ldr",
-        DATA_LDRAW / "LDConfig.ldr",
-        False,
-    ),
+    # LDConfig.ldr is bundled in data/ldraw/ and committed to the repo.
+    # The ldraw.org URL returns 403 as of 2026-06; skip network download if
+    # already present.  If missing, try the LPub3D portable install as a local
+    # fallback before hitting the network.
+]
+
+_LDCONFIG_LOCAL_FALLBACKS: list[Path] = [
+    Path(r"C:\Tools\LPub3D\extras\LDConfig.ldr"),
+    Path(r"C:\Program Files\LPub3D\extras\LDConfig.ldr"),
+    Path(r"C:\Program Files (x86)\LPub3D\extras\LDConfig.ldr"),
 ]
 
 
@@ -71,12 +76,35 @@ def _write_dimensions_csv() -> None:
     print(f"  -> saved to {dest}")
 
 
+def _ensure_ldconfig(dest: Path) -> None:
+    """Ensure LDConfig.ldr is present without hitting the network if possible."""
+    if dest.exists():
+        print(f"Skipping LDConfig.ldr — already present at {dest}")
+        return
+    for fallback in _LDCONFIG_LOCAL_FALLBACKS:
+        if fallback.exists():
+            import shutil
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(fallback, dest)
+            print(f"  -> copied LDConfig.ldr from {fallback}")
+            return
+    # Last resort: try network (may return 403)
+    try:
+        _download_file("https://library.ldraw.org/library/official/LDConfig.ldr", dest, False)
+    except Exception as exc:
+        print(
+            f"ERROR: could not obtain LDConfig.ldr ({exc}). "
+            "Copy it manually from your LPub3D install's extras/ folder."
+        )
+
+
 def main() -> None:
     for url, dest, gunzip in DOWNLOADS:
         try:
             _download_file(url, dest, gunzip)
         except Exception as exc:
             print(f"ERROR downloading {dest.name}: {exc}")
+    _ensure_ldconfig(DATA_LDRAW / "LDConfig.ldr")
     _write_dimensions_csv()
     print("Done.")
 

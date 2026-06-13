@@ -161,6 +161,25 @@ def test_list_colors_returns_at_least_100() -> None:
         assert c["hex"], f"Empty hex for color {c}"
 
 
+def test_list_colors_uses_ldconfig_ids_not_rebrickable_ids() -> None:
+    """list_colors() must return LDraw color codes (≤511), not Rebrickable IDs.
+
+    Rebrickable color IDs like 1100 (Clikits Yellow) are written directly into
+    LDR files as the LDraw color code.  LDView cannot resolve IDs > 511 and
+    renders them as solid black.  This test fails when LDConfig.ldr is missing
+    and the service falls back to colors.csv.
+    """
+    ds._reset()
+    ds.initialize()
+    colors = ds.list_colors()
+    bad = [c for c in colors if c["id"] > 511]
+    assert not bad, (
+        f"list_colors() returned {len(bad)} color(s) with id > 511 — "
+        "LDConfig.ldr is missing and the fallback to Rebrickable IDs is active. "
+        f"First bad entry: {bad[0]}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Integration test: /api/colors endpoint through the production route
 # ---------------------------------------------------------------------------

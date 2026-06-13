@@ -6,6 +6,7 @@ import subprocess
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import AsyncGenerator
 
 import httpx
@@ -86,6 +87,16 @@ def _check_command_on_path(*candidates: str) -> bool:
     return False
 
 
+def _check_ldview_available() -> bool:
+    """Return True if LDView is usable — checks LPub3D bundled binary first."""
+    from brickomancer.utils.subprocess_utils import _LPUB3D_LDVIEW_CANDIDATES
+
+    for p in _LPUB3D_LDVIEW_CANDIDATES:
+        if Path(p).exists():
+            return True
+    return _check_command_on_path("LDView64", "LDView64.exe", "LDView", "ldview", "ldview.exe")
+
+
 @app.get("/api/status")
 async def status() -> dict:
     """Return service health status."""
@@ -98,8 +109,10 @@ async def status() -> dict:
     except Exception:
         llama_ok = False
 
-    ldview_ok = await asyncio.to_thread(_check_command_on_path, "LDView", "ldview", "ldview.exe")
-    lpub3d_ok = await asyncio.to_thread(_check_command_on_path, "lpub3d", "lpub3d.exe")
+    ldview_ok = await asyncio.to_thread(_check_ldview_available)
+    lpub3d_ok = await asyncio.to_thread(
+        _check_command_on_path, "LPub3D", "LPub3D.exe", "lpub3d", "lpub3d.exe"
+    )
 
     return {
         "status": "ok",

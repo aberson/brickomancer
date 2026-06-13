@@ -105,6 +105,14 @@ def _run_triposr(pil_image: Image.Image, output_dir: Path) -> Path:
 
     image_tensor = _tsr_remove_bg(pil_image, force=False)
 
+    # ImagePreprocessor does np.array(image) with no channel stripping, so RGBA
+    # produces a 4-channel tensor that the tokenizer's 3-channel normalizer rejects.
+    # Composite on white to give TripoSR an RGB image regardless of rembg output.
+    if isinstance(image_tensor, Image.Image) and image_tensor.mode == "RGBA":
+        rgb = Image.new("RGB", image_tensor.size, (255, 255, 255))
+        rgb.paste(image_tensor, mask=image_tensor.split()[3])
+        image_tensor = rgb
+
     with torch.no_grad():
         scene_codes = model([image_tensor], device="cuda")
 

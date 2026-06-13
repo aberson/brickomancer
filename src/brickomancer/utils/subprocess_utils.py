@@ -43,6 +43,29 @@ def run_claude_subprocess(prompt: str, image_path: str) -> str:
     return result.stdout
 
 
+# LPub3D ships its own LDView binary pre-configured with the parts library.
+# Prefer it over the standalone LDView install, which has no bundled parts.
+_LPUB3D_LDVIEW_CANDIDATES: list[str] = [
+    r"C:\Tools\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe",
+    r"C:\Program Files\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe",
+    r"C:\Program Files (x86)\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe",
+]
+# LPub3D also ships its own LDraw parts library — pass it to standalone LDView.
+_LPUB3D_LDRAW_CANDIDATES: list[str] = [
+    r"C:\Tools\LPub3D\ldraw",
+    r"C:\Program Files\LPub3D\ldraw",
+    r"C:\Program Files (x86)\LPub3D\ldraw",
+]
+
+
+def _find_ldraw_dir() -> str | None:
+    """Return the first LDraw parts directory found from LPub3D installs."""
+    for d in _LPUB3D_LDRAW_CANDIDATES:
+        if Path(d).is_dir():
+            return d
+    return None
+
+
 def run_ldview(ldr_path: str, output_png: str) -> None:
     """Call LDView headless to render an LDraw file to a PNG.
 
@@ -51,30 +74,39 @@ def run_ldview(ldr_path: str, output_png: str) -> None:
         output_png: Path where the output PNG should be written.
 
     Raises:
-        RuntimeError: If LDView is not found on PATH or the render fails.
+        RuntimeError: If LDView is not found or the render fails.
     """
+    # Prefer LPub3D's bundled LDView (pre-configured with parts library).
     ldview_cmd: str | None = None
-    for cmd_name in ("ldview", "LDView", "ldview.exe"):
-        if shutil.which(cmd_name):
-            ldview_cmd = cmd_name
+    for path in _LPUB3D_LDVIEW_CANDIDATES:
+        if Path(path).exists():
+            ldview_cmd = path
             break
+    if ldview_cmd is None:
+        for cmd_name in ("LDView64", "LDView64.exe", "ldview", "LDView", "ldview.exe"):
+            found = shutil.which(cmd_name)
+            if found:
+                ldview_cmd = found
+                break
     if ldview_cmd is None:
         raise RuntimeError("LDView not found on PATH")
 
-    result = subprocess.run(
-        [
-            ldview_cmd,
-            ldr_path,
-            f"-SaveSnapshot={output_png}",
-            "-ExportFile=1",
-            "-SaveWidth=400",
-            "-SaveHeight=300",
-            "-AutoCrop=1",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    cmd: list[str] = [
+        ldview_cmd,
+        ldr_path,
+        f"-SaveSnapshot={output_png}",
+        "-ExportFile=1",
+        "-SaveWidth=400",
+        "-SaveHeight=300",
+        "-AutoCrop=1",
+    ]
+    # Always pass the LDraw library dir — even LPub3D's bundled LDView needs it
+    # when invoked as a standalone subprocess (it doesn't auto-detect its own parts dir).
+    ldraw_dir = _find_ldraw_dir()
+    if ldraw_dir:
+        cmd.append(f"-LDrawDir={ldraw_dir}")
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
         raise RuntimeError(f"LDView failed: {result.stderr}")
     if not Path(output_png).exists():
@@ -96,16 +128,20 @@ def run_lpub3d(ldr_path: str, output_dir: str) -> str:
             or no PDF is produced.
     """
     lpub3d_cmd: str | None = None
-    for cmd_name in ("lpub3d", "lpub3d.exe"):
-        if shutil.which(cmd_name):
-            lpub3d_cmd = cmd_name
+    for cmd_name in ("LPub3D", "LPub3D.exe", "lpub3d", "lpub3d.exe"):
+        found = shutil.which(cmd_name)
+        if found:
+            lpub3d_cmd = found
             break
     if lpub3d_cmd is None:
         raise RuntimeError(_LPUB3D_NOT_FOUND_MSG)
 
+    # LPub3D writes the PDF next to the input .ldr file as <basename>_<dpi>_DPI.pdf.
+    # The -pe pdf flag triggers PDF export; there is no -o output-dir flag.
+    ldr_dir = os.path.dirname(os.path.abspath(ldr_path))
     try:
         result = subprocess.run(
-            [lpub3d_cmd, "-pdf", "-o", output_dir, ldr_path],
+            [lpub3d_cmd, "-pe", "pdf", ldr_path],
             capture_output=True,
             text=True,
             timeout=120,
@@ -115,7 +151,7 @@ def run_lpub3d(ldr_path: str, output_dir: str) -> str:
     if result.returncode != 0:
         raise RuntimeError(f"LPub3D failed: {result.stderr}")
 
-    pdfs = glob.glob(os.path.join(output_dir, "*.pdf"))
+    pdfs = glob.glob(os.path.join(ldr_dir, "*.pdf"))
     if not pdfs:
-        raise RuntimeError(f"LPub3D exited 0 but no .pdf found in {output_dir}")
+        raise RuntimeError(f"LPub3D exited 0 but no .pdf found in {ldr_dir}")
     return pdfs[0]

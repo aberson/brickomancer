@@ -5,8 +5,11 @@ Call ``initialize()`` at startup to warm the cache before the first request.
 """
 
 import csv
+import logging
 import threading
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # File paths (module-level constants so tests can monkeypatch them)
@@ -142,6 +145,14 @@ def _ensure_initialized() -> None:
         if _initialized:  # double-checked locking
             return
         _ldconfig_colors = _parse_ldconfig(_LDCONFIG_PATH)
+        if not _ldconfig_colors:
+            _log.warning(
+                "LDConfig.ldr not found or empty at %s — falling back to "
+                "Rebrickable color IDs which are NOT valid LDraw color codes. "
+                "Run scripts/download_data.py or copy LDConfig.ldr from your "
+                "LPub3D install's extras/ folder to data/ldraw/.",
+                _LDCONFIG_PATH,
+            )
         _rebrickable_colors = _parse_colors_csv(_COLORS_CSV_PATH)
         _parts = _parse_parts_csv(_PARTS_CSV_PATH)
         _initialized = True
