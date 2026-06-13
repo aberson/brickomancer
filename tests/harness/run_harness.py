@@ -10,9 +10,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import logging
+import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import yaml
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -39,6 +43,10 @@ STATUS_URL = f"{SERVER_URL}/api/status"
 POLL_TIMEOUT_S = 60
 POLL_INTERVAL_S = 2.0
 QUALITY_THRESHOLD = 8.0
+ADVISORS_YAML = HARNESS_DIR / "advisors.yaml"
+ADVISOR_TIMEOUT_S = 30
+
+_INPUT_IMAGE_PATH = HARNESS_DIR.parent / "integration" / "fixtures" / "cake.jpg"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -139,9 +147,249 @@ def pipeline_executor(iteration_dir: Path) -> dict[str, Any]:
     }
 
 
+def _validate_advisor_result(parsed: Any) -> dict[str, Any] | None:
+    """Validate advisor JSON shape and clamp values. Returns None on bad input."""
+    if not isinstance(parsed, dict):
+        return None
+    score = parsed.get("score")
+    confidence = parsed.get("confidence")
+    findings = parsed.get("findings", [])
+    if not isinstance(score, (int, float)) or isinstance(score, bool):
+        return None
+    if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+        return None
+    if not isinstance(findings, list):
+        findings = []
+    return {
+        "score": max(0, min(10, int(score))),
+        "confidence": max(0.0, min(1.0, float(confidence))),
+        "findings": [str(f) for f in findings],
+    }
+
+
+def _parse_advisor_output(output: str) -> dict[str, Any] | None:
+    """Extract and validate JSON from advisor output. Returns None on failure."""
+    try:
+        return _validate_advisor_result(json.loads(output))
+    except (json.JSONDecodeError, ValueError):
+        pass
+    match = re.search(r'\{[^{}]*"score"[^{}]*\}', output, re.DOTALL)
+    if match:
+        try:
+            return _validate_advisor_result(json.loads(match.group()))
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return None
+
+
+def _extract_parts_list(ldr_path: str) -> str:
+    """Parse LDR type-1 lines to produce a 'part_id: count' text block."""
+    try:
+        ldr_text = Path(ldr_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "[LDR file not readable]"
+    counts: dict[str, int] = {}
+    for line in ldr_text.splitlines():
+        fields = line.strip().split()
+        if len(fields) >= 15 and fields[0] == "1":
+            part_file = fields[14]
+            counts[part_file] = counts.get(part_file, 0) + 1
+    if not counts:
+        return "[No parts found in LDR file]"
+    return "\n".join(f"{part}: {count}" for part, count in sorted(counts.items()))
+
+
+def _normalize_scores(raw_scores: list[float]) -> list[float]:
+    """Z-score normalise raw scores (population std), map to [0,10], clamp."""
+    n = len(raw_scores)
+    if n == 0:
+        return []
+    mean = sum(raw_scores) / n
+    variance = sum((x - mean) ** 2 for x in raw_scores) / n
+    std = math.sqrt(variance)
+    if std == 0.0:
+        return [5.0] * n
+    result = []
+    for raw in raw_scores:
+        z = (raw - mean) / std
+        norm = (z + 3.0) / 6.0 * 10.0
+        result.append(round(max(0.0, min(10.0, norm)), 4))
+    return result
+
+
+def _compute_weights(normalized_scores: list[float], confidences: list[float]) -> list[float]:
+    """Sampling weight per advisor: w = max(0, (10 − norm) × confidence)."""
+    return [round(max(0.0, (10.0 - ns) * c), 4) for ns, c in zip(normalized_scores, confidences)]
+
+
+def _run_single_advisor(
+    advisor: dict[str, Any],
+    iteration_state: dict[str, Any],
+    timeout_s: int = ADVISOR_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Invoke one advisor via `claude -p` subprocess and return parsed result."""
+    advisor_id: str = advisor["id"]
+    reads: list[str] = advisor.get("reads", [])
+    base_prompt: str = advisor["prompt"].strip()
+
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    if not token:
+        log.warning("CLAUDE_CODE_OAUTH_TOKEN not set — advisor %s returning stub", advisor_id)
+        return {"score": 5, "confidence": 0.0, "findings": ["ADVISOR_TOKEN_MISSING"]}
+
+    prompt_parts: list[str] = [base_prompt]
+
+    if "ldr_file" in reads or "parts_list" in reads:
+        ldr_path = iteration_state.get("ldr_path", "")
+        ldr_text = ""
+        if ldr_path and Path(ldr_path).exists():
+            try:
+                ldr_text = Path(ldr_path).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                ldr_text = ""
+        if "ldr_file" in reads:
+            if ldr_text:
+                prompt_parts.append(
+                    f"\n\n--- LDraw file contents ---\n{ldr_text}\n--- end of LDraw file ---"
+                )
+            else:
+                prompt_parts.append("\n\n[LDraw file not available for this iteration]")
+        if "parts_list" in reads:
+            parts_text = _extract_parts_list(ldr_path) if ldr_path else "[Parts list not available]"
+            prompt_parts.append(
+                f"\n\n--- Parts list (part_id: count) ---\n{parts_text}\n--- end of parts list ---"
+            )
+
+    if "pdf" in reads or "pdf_first_page" in reads:
+        pdf_path = iteration_state.get("pdf_path", "")
+        if pdf_path:
+            if "pdf" in reads:
+                prompt_parts.append(
+                    f"\n\nThe instruction PDF is at this absolute path: {pdf_path}\n"
+                    "Use your Read tool to read and analyse the full PDF content."
+                )
+            if "pdf_first_page" in reads:
+                prompt_parts.append(
+                    f"\n\nThe instruction PDF is at this absolute path: {pdf_path}\n"
+                    "Use your Read tool to read the first page (page 1) of the PDF."
+                )
+
+    full_prompt = "".join(prompt_parts)
+    cmd: list[str] = ["claude", "-p", full_prompt]
+
+    if "preview_png" in reads:
+        preview_png = iteration_state.get("preview_png_path")
+        if preview_png and Path(preview_png).exists():
+            cmd += ["--image", preview_png]
+        else:
+            log.warning("Advisor %s: preview_png not available — omitting --image", advisor_id)
+
+    if "input_image" in reads:
+        if _INPUT_IMAGE_PATH.exists():
+            cmd += ["--image", str(_INPUT_IMAGE_PATH)]
+        else:
+            log.warning(
+                "Advisor %s: input_image fixture not found at %s", advisor_id, _INPUT_IMAGE_PATH
+            )
+
+    env = {**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": token}
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("Advisor %s timed out after %ds", advisor_id, timeout_s)
+        return {"score": 5, "confidence": 0.0, "findings": ["ADVISOR_TIMEOUT"]}
+    except OSError as exc:
+        log.warning("Advisor %s failed to start: %s", advisor_id, exc)
+        return {"score": 5, "confidence": 0.0, "findings": [f"ADVISOR_ERROR: {exc}"]}
+
+    if result.returncode != 0:
+        log.warning(
+            "Advisor %s exited %d: %s", advisor_id, result.returncode, result.stderr[:200]
+        )
+        return {
+            "score": 5,
+            "confidence": 0.0,
+            "findings": [f"ADVISOR_SUBPROCESS_FAILED: exit={result.returncode}"],
+        }
+
+    parsed = _parse_advisor_output(result.stdout.strip())
+    if parsed is None:
+        log.warning("Advisor %s output unparseable: %s", advisor_id, result.stdout[:200])
+        return {"score": 5, "confidence": 0.0, "findings": ["ADVISOR_PARSE_ERROR"]}
+
+    return parsed
+
+
 def advisor_engine(iteration_dir: Path, iteration_state: dict[str, Any]) -> dict[str, Any]:
-    """Run all advisors against the iteration artifacts and return scored results."""
-    raise NotImplementedError("advisor_engine is not yet implemented")
+    """Run all advisors in parallel and return a scored results report.
+
+    Loads advisors.yaml, spawns 7 parallel claude -p calls, applies z-score
+    normalisation, computes sampling weights, saves advisor_reports.json to
+    iteration_dir, and returns the report dict.
+    """
+    with ADVISORS_YAML.open("r", encoding="utf-8") as fh:
+        config = yaml.safe_load(fh)
+    advisors: list[dict[str, Any]] = config["advisors"]
+    ordered_ids: list[str] = [a["id"] for a in advisors]
+
+    log.info("advisor_engine: running %d advisors in parallel…", len(advisors))
+
+    raw_results: dict[str, dict[str, Any]] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool:
+        future_to_id = {
+            pool.submit(_run_single_advisor, advisor, iteration_state): advisor["id"]
+            for advisor in advisors
+        }
+        for future in concurrent.futures.as_completed(future_to_id):
+            aid = future_to_id[future]
+            try:
+                raw_results[aid] = future.result()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Advisor %s raised unexpectedly: %s", aid, exc)
+                raw_results[aid] = {
+                    "score": 5,
+                    "confidence": 0.0,
+                    "findings": [f"ADVISOR_ERROR: {exc}"],
+                }
+
+    raw_scores = [float(raw_results[aid]["score"]) for aid in ordered_ids]
+    confidences = [float(raw_results[aid]["confidence"]) for aid in ordered_ids]
+    normalized = _normalize_scores(raw_scores)
+    weights = _compute_weights(normalized, confidences)
+
+    scores_raw = {aid: raw_results[aid]["score"] for aid in ordered_ids}
+    scores_normalized = {aid: normalized[i] for i, aid in enumerate(ordered_ids)}
+    scores_weights = {aid: weights[i] for i, aid in enumerate(ordered_ids)}
+    avg_normalized = sum(normalized) / len(normalized) if normalized else None
+
+    report: dict[str, Any] = {
+        "scores_raw": scores_raw,
+        "scores_normalized": scores_normalized,
+        "weights": scores_weights,
+        "avg_normalized": round(avg_normalized, 4) if avg_normalized is not None else None,
+        "advisors": {
+            aid: {
+                "score": raw_results[aid]["score"],
+                "confidence": raw_results[aid]["confidence"],
+                "findings": raw_results[aid]["findings"],
+                "normalized_score": scores_normalized[aid],
+                "weight": scores_weights[aid],
+            }
+            for aid in ordered_ids
+        },
+    }
+
+    report_path = iteration_dir / "advisor_reports.json"
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    log.info("advisor_engine: saved report → %s", report_path)
+
+    return report
 
 
 def developer_agent(advisor_results: dict[str, Any], iteration: int) -> dict[str, Any]:
