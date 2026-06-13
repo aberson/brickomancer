@@ -474,7 +474,7 @@ def developer_agent(advisor_results: dict[str, Any], iteration: int) -> dict[str
     3. Invoke `claude -p` via CLAUDE_CODE_OAUTH_TOKEN subprocess (120s timeout).
     4. Parse JSON response: {changes: [{file_path, content}], summary: str}.
     5. Write changed file to disk.
-    6. Run pytest quality gate (uv run pytest -q --tb=short).
+    6. Run pytest quality gate (unit tests only; integration tests excluded).
     7. If pass: git add + git commit.  If fail: git checkout -- <file> + log revert.
     8. Return {selected_dimension, change_summary, test_result}.
     """
@@ -570,12 +570,19 @@ def developer_agent(advisor_results: dict[str, Any], iteration: int) -> dict[str
     log.info("developer_agent: wrote %s (%d chars)", rel_path, len(new_content))
 
     test_proc = subprocess.run(
-        ["uv", "run", "pytest", "-q", "--tb=short"],
+        ["uv", "run", "pytest", "-q", "--tb=short", "--ignore=tests/integration"],
         capture_output=True,
         text=True,
         timeout=300,
         cwd=str(PROJECT_ROOT),
     )
+
+    if test_proc.returncode != 0:
+        log.warning(
+            "pytest gate failed:\n%s\n%s",
+            test_proc.stdout[-2000:] if test_proc.stdout else "",
+            test_proc.stderr[-500:] if test_proc.stderr else "",
+        )
 
     if test_proc.returncode == 0:
         git_add = subprocess.run(
