@@ -380,6 +380,7 @@ that need the LDR file read it as plain text.
   makes a change on each iteration, passing iterations are committed to git,
   `scores.jsonl` has 2 entries with all fields populated
 - **Depends on:** 15
+- **Status:** DONE (2026-06-13)
 
 ### Step 17: Smoke gate — two-iteration end-to-end run
 - **Problem:** Operator runs the harness for 2 full iterations against `cake.jpg`
