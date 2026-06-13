@@ -1,7 +1,7 @@
 """Validate tests/harness/advisors.yaml schema — no LLM calls.
 
 Checks:
-- All 7 advisors are present (by id)
+- All 8 advisors are present (by id)
 - Each advisor has: id (str), name (str), reads (list, non-empty), prompt (str, non-empty),
   anchors (list of 3 dicts each with score and description)
 - The 3 anchors have scores exactly 2, 5, and 8
@@ -30,6 +30,7 @@ EXPECTED_IDS = {
     "aesthetics",
     "pdf_completeness",
     "technical_validity",
+    "reference_fidelity",
 }
 
 EXPECTED_ANCHOR_SCORES = {2, 5, 8}
@@ -68,8 +69,8 @@ def test_yaml_has_advisors_list(advisors_doc: dict[str, Any]) -> None:
     assert isinstance(advisors_doc["advisors"], list), "'advisors' must be a list"
 
 
-def test_all_seven_advisors_present(advisors_by_id: dict[str, dict[str, Any]]) -> None:
-    """All 7 required advisor IDs are present."""
+def test_all_eight_advisors_present(advisors_by_id: dict[str, dict[str, Any]]) -> None:
+    """All 8 required advisor IDs are present."""
     missing = EXPECTED_IDS - set(advisors_by_id.keys())
     assert not missing, f"Missing advisor IDs: {missing}"
 
@@ -80,10 +81,10 @@ def test_no_duplicate_advisor_ids(advisors_doc: dict[str, Any]) -> None:
     assert len(ids) == len(set(ids)), f"Duplicate advisor IDs found: {ids}"
 
 
-def test_advisor_count_is_exactly_seven(advisors_doc: dict[str, Any]) -> None:
-    """Exactly 7 advisors are defined."""
-    assert len(advisors_doc["advisors"]) == 7, (
-        f"Expected 7 advisors, found {len(advisors_doc['advisors'])}"
+def test_advisor_count_is_exactly_eight(advisors_doc: dict[str, Any]) -> None:
+    """Exactly 8 advisors are defined."""
+    assert len(advisors_doc["advisors"]) == 8, (
+        f"Expected 8 advisors, found {len(advisors_doc['advisors'])}"
     )
 
 

@@ -18,6 +18,17 @@ from tests.harness.run_harness import pipeline_executor
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Real image used as input fixture — content doesn't matter for these tests
+# (all HTTP is mocked); file just needs to be openable.
+_INPUT_IMAGE = (
+    Path(__file__).parents[2]
+    / "docs"
+    / "example_input_output"
+    / "star"
+    / "input_image"
+    / "cartoon_star.jpg"
+)
+
 UUID_PART = "aaaabbbb-cccc-dddd-eeee-ffffffffffff"
 SUGGESTION_ID = f"{UUID_PART}_0"
 FAKE_PDF = b"%PDF-1.4 fake"
@@ -85,7 +96,7 @@ class TestPipelineExecutorHappyPath:
         mock_client.post.side_effect = [gen_resp, instr_resp]
 
         with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
-            result = pipeline_executor(tmp_path)
+            result = pipeline_executor(tmp_path, _INPUT_IMAGE)
 
         assert set(result.keys()) == {
             "suggestion_id",
@@ -93,6 +104,7 @@ class TestPipelineExecutorHappyPath:
             "ldr_path",
             "preview_png_path",
             "pdf_path",
+            "input_image_path",
         }
 
     def test_pdf_is_saved_to_iteration_dir(self, tmp_path: Path) -> None:
@@ -105,7 +117,7 @@ class TestPipelineExecutorHappyPath:
         mock_client.post.side_effect = [gen_resp, instr_resp]
 
         with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
-            result = pipeline_executor(tmp_path)
+            result = pipeline_executor(tmp_path, _INPUT_IMAGE)
 
         pdf_path = Path(result["pdf_path"])
         assert pdf_path.exists()
@@ -121,7 +133,7 @@ class TestPipelineExecutorHappyPath:
         mock_client.post.side_effect = [gen_resp, instr_resp]
 
         with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
-            result = pipeline_executor(tmp_path)
+            result = pipeline_executor(tmp_path, _INPUT_IMAGE)
 
         assert result["suggestion_id"] == SUGGESTION_ID
         assert result["uuid_part"] == UUID_PART
@@ -136,7 +148,7 @@ class TestPipelineExecutorHappyPath:
         mock_client.post.side_effect = [gen_resp, instr_resp]
 
         with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
-            result = pipeline_executor(tmp_path)
+            result = pipeline_executor(tmp_path, _INPUT_IMAGE)
 
         assert UUID_PART in result["ldr_path"]
         assert result["ldr_path"].endswith("suggestion_0.ldr")
@@ -165,7 +177,7 @@ class TestPipelineExecutorHappyPath:
             patch("tests.harness.run_harness.httpx.Client", return_value=mock_client),
             patch("tests.harness.run_harness.TMP_DIR_PATH", fake_tmp),
         ):
-            result = pipeline_executor(iteration_out)
+            result = pipeline_executor(iteration_out, _INPUT_IMAGE)
 
         copied = iteration_out / "preview.png"
         assert copied.exists()
@@ -195,7 +207,7 @@ class TestPipelineExecutorNoCompact:
 
         with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
             with pytest.raises(ValueError, match="No compact suggestion"):
-                pipeline_executor(tmp_path)
+                pipeline_executor(tmp_path, _INPUT_IMAGE)
 
     def test_raises_when_suggestions_empty(self, tmp_path: Path) -> None:
         gen_resp = _make_generate_response([])
@@ -207,7 +219,7 @@ class TestPipelineExecutorNoCompact:
 
         with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
             with pytest.raises(ValueError, match="No compact suggestion"):
-                pipeline_executor(tmp_path)
+                pipeline_executor(tmp_path, _INPUT_IMAGE)
 
 
 class TestPipelineExecutorHTTPErrors:
@@ -228,7 +240,7 @@ class TestPipelineExecutorHTTPErrors:
 
         with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
             with pytest.raises(httpx.HTTPStatusError):
-                pipeline_executor(tmp_path)
+                pipeline_executor(tmp_path, _INPUT_IMAGE)
 
     def test_timeout_exception_propagates(self, tmp_path: Path) -> None:
         mock_client = MagicMock()
@@ -238,7 +250,7 @@ class TestPipelineExecutorHTTPErrors:
 
         with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
             with pytest.raises(httpx.TimeoutException):
-                pipeline_executor(tmp_path)
+                pipeline_executor(tmp_path, _INPUT_IMAGE)
 
     def test_http_error_on_instructions_call(self, tmp_path: Path) -> None:
         gen_resp = _make_generate_response(_three_suggestions())
@@ -253,7 +265,7 @@ class TestPipelineExecutorHTTPErrors:
 
         with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
             with pytest.raises(httpx.HTTPStatusError):
-                pipeline_executor(tmp_path)
+                pipeline_executor(tmp_path, _INPUT_IMAGE)
 
 
 class TestPipelineExecutorMissingPreview:
@@ -280,7 +292,7 @@ class TestPipelineExecutorMissingPreview:
             patch("tests.harness.run_harness.TMP_DIR_PATH", fake_tmp),
         ):
             # Must not raise
-            result = pipeline_executor(iteration_out)
+            result = pipeline_executor(iteration_out, _INPUT_IMAGE)
 
         # PDF should still be saved
         assert Path(result["pdf_path"]).exists()
@@ -311,7 +323,7 @@ class TestPipelineExecutorMissingPreview:
             patch("tests.harness.run_harness.TMP_DIR_PATH", fake_tmp),
             caplog.at_level(logging.WARNING, logger="harness"),
         ):
-            pipeline_executor(iteration_out)
+            pipeline_executor(iteration_out, _INPUT_IMAGE)
 
         assert len(caplog.records) >= 1
         assert any("Preview PNG not found" in rec.message for rec in caplog.records)
@@ -331,4 +343,4 @@ class TestPipelineExecutorEmptyPDF:
 
         with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
             with pytest.raises(ValueError, match="empty PDF bytes"):
-                pipeline_executor(tmp_path)
+                pipeline_executor(tmp_path, _INPUT_IMAGE)

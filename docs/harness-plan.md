@@ -592,3 +592,38 @@ Files changed:
 - `tests/test_brick_packer.py`: `test_part_ids_valid` extended to accept `TILE_PART_IDS` values; import updated
 
 Commit: 19b840a. 303 unit tests passing, 0 type errors, 0 lint violations.
+
+---
+
+## 12. Gold Dataset Integration + 8th Advisor (2026-06-13)
+
+**311/311 tests passing. Zero type errors. Zero lint violations.**
+
+### What was built
+
+- **Gold dataset added** — `docs/example_input_output/star/`: `input_image/cartoon_star.jpg` (primary input), `input_image/cartoon_star2.png` (second variant), and 10 gold step PNGs (`step_output/star_step_01.png` … `star_step_10.png`) representing the ideal output for that subject.
+- **Harness input switched** — `_INPUT_IMAGE_PATH` (single constant) replaced with `_INPUT_IMAGE_DIR` + `_pick_input_image()`, which randomly selects one image from the directory at the start of each iteration. Prevents overfitting to a single fixture.
+- **`reference_fidelity` advisor** — 8th advisor in `advisors.yaml` that reads `[preview_png, gold_step_final]` and scores how closely the generated build matches the gold final-step image (`star_step_10.png`) on star silhouette, yellow coloring, scale, and surface flatness.
+- **`input_image_path` threaded through** — `pipeline_executor` now accepts and returns the selected image path; `_run_single_advisor` reads it from `iteration_state` instead of a global; `scores.jsonl` records `input_image` per entry for full traceability.
+- **Tests updated** — `test_advisors.py`, `test_advisor_engine.py` updated for 8 advisors; `test_pipeline_executor.py` updated for new signature and `input_image_path` return key. ThreadPoolExecutor bumped to `max_workers=8`.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `docs/example_input_output/star/` | New gold dataset directory (untracked → staged) |
+| `tests/harness/advisors.yaml` | Added `reference_fidelity` advisor (8th) |
+| `tests/harness/run_harness.py` | `_INPUT_IMAGE_DIR`, `GOLD_STEP_FINAL_PATH`, `_pick_input_image()`, pipeline_executor signature, `gold_step_final` reads handler, scores entry `input_image` field |
+| `tests/harness/test_advisors.py` | Updated for 8 advisors, `reference_fidelity` in EXPECTED_IDS |
+| `tests/harness/test_advisor_engine.py` | Updated call count and dict-length assertions for 8 |
+| `tests/harness/test_pipeline_executor.py` | `_INPUT_IMAGE` constant, all call sites updated, `input_image_path` key assertion |
+| `README.md` | Status line updated |
+| `CLAUDE.md` | Current state updated (8/8 advisors, gold dataset, 311 tests) |
+
+### Fresh context notes for section 12
+
+| Issue | Detail |
+|---|---|
+| Adding more input images | Drop any `.jpg/.jpeg/.png/.webp` into `docs/example_input_output/star/input_image/` — `_pick_input_image()` auto-discovers them, no code change needed |
+| Gold reference is fixed | `GOLD_STEP_FINAL_PATH` always points to `star_step_10.png` regardless of which input image was selected; both star inputs are expected to produce a star-shaped build |
+| `reference_fidelity` source files | Maps to `image_pipeline.py` + `brick_packer.py` in `DIMENSION_SOURCE_FILES` — the shape generation layer is where star-shape fidelity improvements live |

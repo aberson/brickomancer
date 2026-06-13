@@ -48,7 +48,10 @@ ADVISORS_YAML = HARNESS_DIR / "advisors.yaml"
 ADVISOR_TIMEOUT_S = 240
 DEVELOPER_TIMEOUT_S = 300
 
-_INPUT_IMAGE_PATH = HARNESS_DIR.parent / "integration" / "fixtures" / "cake.jpg"
+_INPUT_IMAGE_DIR = PROJECT_ROOT / "docs" / "example_input_output" / "star" / "input_image"
+GOLD_STEP_FINAL_PATH = (
+    PROJECT_ROOT / "docs" / "example_input_output" / "star" / "step_output" / "star_step_10.png"
+)
 
 # Static dimension → primary source files mapping (relative to PROJECT_ROOT)
 DIMENSION_SOURCE_FILES: dict[str, list[str]] = {
@@ -74,7 +77,26 @@ DIMENSION_SOURCE_FILES: dict[str, list[str]] = {
         "src/brickomancer/services/ldraw_writer.py",
         "src/brickomancer/services/brick_packer.py",
     ],
+    "reference_fidelity": [
+        "src/brickomancer/services/image_pipeline.py",
+        "src/brickomancer/services/brick_packer.py",
+    ],
 }
+
+# ---------------------------------------------------------------------------
+# Input image selection
+# ---------------------------------------------------------------------------
+
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _pick_input_image() -> Path:
+    """Randomly select one image from the gold input directory."""
+    candidates = sorted(p for p in _INPUT_IMAGE_DIR.iterdir() if p.suffix.lower() in _IMAGE_EXTS)
+    if not candidates:
+        raise FileNotFoundError(f"No images found in {_INPUT_IMAGE_DIR}")
+    return random.choice(candidates)
+
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -92,26 +114,27 @@ log = logging.getLogger("harness")
 # ---------------------------------------------------------------------------
 
 
-def pipeline_executor(iteration_dir: Path) -> dict[str, Any]:
+def pipeline_executor(iteration_dir: Path, input_image_path: Path) -> dict[str, Any]:
     """Run the full pipeline for one iteration and return iteration state.
 
     Steps:
-    1. POST /api/generate/from-image with the cake.jpg fixture.
+    1. POST /api/generate/from-image with the given input image.
     2. Extract the compact suggestion from the response.
     3. POST /api/generate/instructions for the compact suggestion.
     4. Save the returned PDF to iteration_dir/instructions.pdf.
     5. Copy the preview PNG from tmp/<uuid_part>/suggestion_0_preview.png if present.
     6. Return a dict with iteration state for downstream advisors.
     """
-    fixture_path = HARNESS_DIR.parent / "integration" / "fixtures" / "cake.jpg"
-
     # --- Step 1: POST /from-image ---
     with httpx.Client(timeout=300.0) as client:
-        log.info("pipeline_executor: POSTing to /api/generate/from-image …")
-        with fixture_path.open("rb") as img_fh:
+        log.info(
+            "pipeline_executor: POSTing to /api/generate/from-image (image=%s) …",
+            input_image_path.name,
+        )
+        with input_image_path.open("rb") as img_fh:
             response = client.post(
                 f"{SERVER_URL}/api/generate/from-image",
-                files={"image": ("cake.jpg", img_fh, "image/jpeg")},
+                files={"image": (input_image_path.name, img_fh, "image/jpeg")},
                 data={"height_studs": "8"},
             )
         response.raise_for_status()
@@ -172,6 +195,7 @@ def pipeline_executor(iteration_dir: Path) -> dict[str, Any]:
         "ldr_path": ldr_path,
         "preview_png_path": preview_png_path,
         "pdf_path": str(pdf_path),
+        "input_image_path": str(input_image_path),
     }
 
 
@@ -317,14 +341,26 @@ def _run_single_advisor(
             log.warning("Advisor %s: preview_png not available", advisor_id)
 
     if "input_image" in reads:
-        if _INPUT_IMAGE_PATH.exists():
+        input_img_str = iteration_state.get("input_image_path")
+        input_img = Path(input_img_str) if input_img_str else None
+        if input_img and input_img.exists():
             prompt_parts.append(
-                f"\n\nThe original input image is at this absolute path: {_INPUT_IMAGE_PATH}\n"
+                f"\n\nThe original input image is at this absolute path: {input_img}\n"
                 "Use your Read tool to view this image."
             )
         else:
+            log.warning("Advisor %s: input_image not available in iteration_state", advisor_id)
+
+    if "gold_step_final" in reads:
+        if GOLD_STEP_FINAL_PATH.exists():
+            prompt_parts.append(
+                "\n\nThe gold-standard reference image (final step of an ideal build for this"
+                f" input) is at this absolute path: {GOLD_STEP_FINAL_PATH}\n"
+                "Use your Read tool to view this reference image."
+            )
+        else:
             log.warning(
-                "Advisor %s: input_image fixture not found at %s", advisor_id, _INPUT_IMAGE_PATH
+                "Advisor %s: gold_step_final not found at %s", advisor_id, GOLD_STEP_FINAL_PATH
             )
 
     full_prompt = "".join(prompt_parts)
@@ -379,7 +415,7 @@ def advisor_engine(iteration_dir: Path, iteration_state: dict[str, Any]) -> dict
     log.info("advisor_engine: running %d advisors in parallel…", len(advisors))
 
     raw_results: dict[str, dict[str, Any]] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         future_to_id = {
             pool.submit(_run_single_advisor, advisor, iteration_state): advisor["id"]
             for advisor in advisors
@@ -728,10 +764,12 @@ def _scores_entry(
     iteration: int,
     advisor_results: dict[str, Any],
     dev_result: dict[str, Any],
+    input_image_name: str | None = None,
 ) -> dict[str, Any]:
     return {
         "iteration": iteration,
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        "input_image": input_image_name,
         "scores_raw": advisor_results.get("scores_raw", {}),
         "scores_normalized": advisor_results.get("scores_normalized", {}),
         "selected_dimension": dev_result.get("selected_dimension"),
@@ -787,21 +825,31 @@ def main() -> None:
                 continue
 
             # a) Run pipeline
-            iteration_state = pipeline_executor(iteration_dir)
+            input_image_path = _pick_input_image()
+            log.info("Selected input image: %s", input_image_path.name)
+            iteration_state = pipeline_executor(iteration_dir, input_image_path)
 
             # b) Run advisors
             advisor_results = advisor_engine(iteration_dir, iteration_state)
 
-            # c) Check quality threshold (avg_raw: mean of 1-7 advisor scores)
+            # c) Check quality threshold (avg_raw: mean of 1-8 advisor scores)
             avg = advisor_results.get("avg_raw")
             if avg is not None and avg >= QUALITY_THRESHOLD:
                 log.info(
-                    "Quality threshold reached (avg raw %.2f >= %.1f) — stopping after iteration %d.",
+                    "Quality threshold reached (avg raw %.2f >= %.1f)"
+                    " — stopping after iteration %d.",
                     avg,
                     QUALITY_THRESHOLD,
                     i,
                 )
-                _append_scores(_scores_entry(i, advisor_results, {"test_result": "QUALITY_GATE_MET"}))
+                _append_scores(
+                    _scores_entry(
+                        i,
+                        advisor_results,
+                        {"test_result": "QUALITY_GATE_MET"},
+                        input_image_path.name,
+                    )
+                )
                 iterations_completed += 1
                 break
 
@@ -809,7 +857,7 @@ def main() -> None:
             dev_result = developer_agent(advisor_results, i)
 
             # e) Append scores
-            _append_scores(_scores_entry(i, advisor_results, dev_result))
+            _append_scores(_scores_entry(i, advisor_results, dev_result, input_image_path.name))
             iterations_completed += 1
 
     finally:

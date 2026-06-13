@@ -199,8 +199,8 @@ FAKE_JSON = '{"score": 7, "confidence": 0.8, "findings": ["looks solid"]}'
 
 
 class TestAdvisorEngineIntegration:
-    def test_calls_all_seven_advisors_and_saves_report(self, tmp_path: Path) -> None:
-        """advisor_engine must invoke subprocess.run 7 times and write advisor_reports.json."""
+    def test_calls_all_eight_advisors_and_saves_report(self, tmp_path: Path) -> None:
+        """advisor_engine must invoke subprocess.run 8 times and write advisor_reports.json."""
         iteration_dir = tmp_path / "iteration_1"
         iteration_dir.mkdir()
 
@@ -222,16 +222,16 @@ class TestAdvisorEngineIntegration:
             with patch(patch_target, return_value=mock_proc) as mock_run:
                 result = advisor_engine(iteration_dir, fake_state)
 
-        assert mock_run.call_count == 7
+        assert mock_run.call_count == 8
 
         report_path = iteration_dir / "advisor_reports.json"
         assert report_path.exists(), "advisor_reports.json must be written"
 
         saved = json.loads(report_path.read_text())
-        assert len(saved["scores_raw"]) == 7
-        assert len(saved["scores_normalized"]) == 7
-        assert len(saved["weights"]) == 7
-        assert len(saved["advisors"]) == 7
+        assert len(saved["scores_raw"]) == 8
+        assert len(saved["scores_normalized"]) == 8
+        assert len(saved["weights"]) == 8
+        assert len(saved["advisors"]) == 8
         assert "avg_normalized" in saved
 
         assert result["avg_normalized"] == saved["avg_normalized"]

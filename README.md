@@ -117,4 +117,4 @@ scripts/
 
 ## Status
 
-**Surface tiles + color_match advisor** — First harness run complete; top-surface bricks tile-smoothed via `_apply_surface_tiles()`; `part_variety` advisor replaced with `color_match` (reads preview + input image). 303 tests passing, 0 type errors, 0 lint violations.
+**Gold dataset + 8th advisor** — Harness input switched from cake.jpg to cartoon_star gold dataset (`docs/example_input_output/star/`); per-iteration random input selection from multi-image pool; new `reference_fidelity` advisor compares generated build against gold final step (`star_step_10.png`); `scores.jsonl` now records which input image drove each iteration. 311 tests passing, 0 type errors, 0 lint violations.
