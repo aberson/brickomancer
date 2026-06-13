@@ -16,6 +16,10 @@ LDraw coordinate system
   bottom of the build (sy=0) sits at LDraw y=0 and higher layers have
   more-negative Y values.
 
+  Tiles are 8 LDU tall (vs 24 LDU for standard bricks). A tile at voxel
+  layer y sits on the studs of the bricks at layer y-1, so its LDraw Y
+  is (y-1)*-24 - 8 = y*-24 + 16. Standard brick formula is unchanged.
+
 Line format:
   1 <color_id> <x> <y> <z> 1 0 0 0 1 0 0 0 1 <part_file>.dat
 
@@ -25,11 +29,14 @@ Step markers:
 
 import os
 
-from brickomancer.models.brick import BrickPlacement
+from brickomancer.models.brick import BrickPlacement, TILE_PART_IDS
 
 # LDraw unit conversion constants
 _STUD_LDU = 20   # 1 stud = 20 LDU in X and Z
 _LAYER_LDU = 24  # 1 layer = 24 LDU in Y
+_TILE_HEIGHT_LDU = 8  # tiles are 8 LDU tall (same as a plate)
+
+_TILE_PART_ID_SET: frozenset[str] = frozenset(TILE_PART_IDS.values())
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +47,12 @@ _LAYER_LDU = 24  # 1 layer = 24 LDU in Y
 def _to_ldu(bp: BrickPlacement) -> tuple[int, int, int]:
     """Convert stud coordinates to LDraw units."""
     x = bp.x * _STUD_LDU
-    y = bp.y * -_LAYER_LDU  # negate: voxel y-up → LDraw y-down
+    if bp.part_id in _TILE_PART_ID_SET:
+        # Tiles are 8 LDU tall; they sit on the studs of the layer below.
+        # Correct Y = (y-1)*-24 - 8 = y*-24 + 16
+        y = bp.y * -_LAYER_LDU + (_LAYER_LDU - _TILE_HEIGHT_LDU)
+    else:
+        y = bp.y * -_LAYER_LDU  # negate: voxel y-up → LDraw y-down
     z = bp.z * _STUD_LDU
     return x, y, z
 
