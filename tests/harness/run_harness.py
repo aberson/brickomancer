@@ -402,12 +402,14 @@ def advisor_engine(iteration_dir: Path, iteration_state: dict[str, Any]) -> dict
     scores_normalized = {aid: normalized[i] for i, aid in enumerate(ordered_ids)}
     scores_weights = {aid: weights[i] for i, aid in enumerate(ordered_ids)}
     avg_normalized = sum(normalized) / len(normalized) if normalized else None
+    avg_raw = sum(raw_scores) / len(raw_scores) if raw_scores else None
 
     report: dict[str, Any] = {
         "scores_raw": scores_raw,
         "scores_normalized": scores_normalized,
         "weights": scores_weights,
         "avg_normalized": round(avg_normalized, 4) if avg_normalized is not None else None,
+        "avg_raw": round(avg_raw, 4) if avg_raw is not None else None,
         "advisors": {
             aid: {
                 "score": raw_results[aid]["score"],
@@ -733,6 +735,7 @@ def _scores_entry(
         "change_summary": dev_result.get("change_summary"),
         "test_result": dev_result.get("test_result"),
         "avg_normalized": advisor_results.get("avg_normalized"),
+        "avg_raw": advisor_results.get("avg_raw"),
     }
 
 
@@ -786,15 +789,18 @@ def main() -> None:
             # b) Run advisors
             advisor_results = advisor_engine(iteration_dir, iteration_state)
 
-            # c) Check quality threshold
-            avg = advisor_results.get("avg_normalized")
-            if avg is not None and avg > QUALITY_THRESHOLD:
+            # c) Check quality threshold (avg_raw: mean of 1-7 advisor scores)
+            avg = advisor_results.get("avg_raw")
+            if avg is not None and avg >= QUALITY_THRESHOLD:
                 log.info(
-                    "Advisors suggest quality target met (%.1f/10) — continuing to iteration %d/%d",
+                    "Quality threshold reached (avg raw %.2f >= %.1f) — stopping after iteration %d.",
                     avg,
+                    QUALITY_THRESHOLD,
                     i,
-                    args.iterations,
                 )
+                _append_scores(_scores_entry(i, advisor_results, {"test_result": "QUALITY_GATE_MET"}))
+                iterations_completed += 1
+                break
 
             # d) Developer agent
             dev_result = developer_agent(advisor_results, i)
