@@ -1,4 +1,4 @@
-"""Image pipeline — rembg background removal, TripoSR mesh generation, voxelization.
+"""Image pipeline â€” rembg background removal, TripoSR mesh generation, voxelization.
 
 TripoSR and torch are NOT listed in pyproject.toml (CUDA-specific install required
 separately).  rembg requires onnxruntime (CPU or GPU variant).  Both imports are
@@ -15,7 +15,7 @@ import trimesh
 from PIL import Image
 
 # ---------------------------------------------------------------------------
-# Optional rembg import — guarded because rembg calls sys.exit(1) when
+# Optional rembg import â€” guarded because rembg calls sys.exit(1) when
 # onnxruntime is absent, which would crash the collection phase.
 # ---------------------------------------------------------------------------
 try:
@@ -27,7 +27,7 @@ except (ImportError, SystemExit):
     _REMBG_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
-# Optional TripoSR import — guarded so the module loads without CUDA deps.
+# Optional TripoSR import â€” guarded so the module loads without CUDA deps.
 # ---------------------------------------------------------------------------
 try:
     from tsr.system import TSR as _TSR  # type: ignore[import-untyped]
@@ -39,7 +39,7 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers — constants
+# Internal helpers â€” constants
 # ---------------------------------------------------------------------------
 
 # 1 LEGO stud = 8 LDU (LDraw Units) = 9.6 mm = 0.0096 m.
@@ -49,7 +49,7 @@ except ImportError:
 _STUD_METERS: float = 0.0096
 
 # ---------------------------------------------------------------------------
-# Internal helpers — functions
+# Internal helpers â€” functions
 # ---------------------------------------------------------------------------
 
 
@@ -158,7 +158,7 @@ def _voxelize(mesh: trimesh.Trimesh, pitch: float = _STUD_METERS) -> np.ndarray:
 
 
 def run(image_path: str, height_studs: int = 10) -> np.ndarray:
-    """Full image pipeline: rembg background removal → TripoSR mesh → voxelization.
+    """Full image pipeline: rembg background removal â†’ TripoSR mesh â†’ voxelization.
 
     Args:
         image_path: Path to the input image (JPEG, PNG, etc.).
@@ -194,4 +194,5 @@ def run(image_path: str, height_studs: int = 10) -> np.ndarray:
 
     mesh: trimesh.Trimesh = loaded
     mesh = _scale_mesh(mesh, height_studs)
-    return _voxelize(mesh)
+    voxels = _voxelize(mesh)
+    return np.transpose(voxels, (0, 2, 1))
