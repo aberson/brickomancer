@@ -280,6 +280,7 @@ that need the LDR file read it as plain text.
 - **Done when:** All 7 advisors present, each has a rubric + 3 anchors + structured
   output spec; `pytest tests/harness/test_advisors.py` passes (schema validation)
 - **Depends on:** none
+- **Status:** DONE (2026-06-12)
 
 <!-- autofix-applied: 2026-06-12 -->
 ### Step 13: Harness scaffolding — server lifecycle and iteration loop

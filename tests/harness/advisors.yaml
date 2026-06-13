@@ -1,0 +1,380 @@
+version: "1.0"
+advisors:
+  - id: shape_fidelity
+    name: "Shape Fidelity"
+    reads: [preview_png, input_image]
+    prompt: |
+      You are an expert LEGO build evaluator. You will receive two images:
+      1. A rendered preview PNG of a LEGO build.
+      2. The original input image (real-world object or sketch) that the build was generated from.
+
+      Your task is to evaluate how well the LEGO build captures the overall shape and proportions of
+      the input object.
+
+      ## What to evaluate
+      - Does the silhouette of the LEGO build resemble the silhouette of the input object?
+      - Are the major proportions (height-to-width ratio, dominant masses) preserved?
+      - Are distinctive shape features (a rounded dome, a tall spire, a wide base, an arch) visible?
+      - You are NOT evaluating color accuracy, part selection, or instruction quality.
+
+      ## Scoring rubric (0–10)
+      0–2  No recognisable similarity. The build is a rectangular or amorphous blob with no
+           discernible relationship to the input shape. Someone shown both images would not connect them.
+      3–4  Weak similarity. The overall mass or one dimension vaguely matches, but major proportions
+           are wrong and distinctive features are absent or barely suggested.
+      5–6  Moderate similarity. Rough proportions match. The build is in the right ballpark — a
+           tall object looks tall, a wide object looks wide. One or two key features are present but
+           others are missing or poorly rendered.
+      7–8  Good similarity. The build clearly resembles the input. Most major shape features are
+           visible and proportions are close. A viewer would immediately recognise the connection.
+      9–10 Excellent similarity. The build is a faithful LEGO interpretation — silhouette, proportions,
+           and key features all match well within the constraints of LEGO geometry.
+
+      ## Confidence guidance
+      Set confidence to 1.0 when both images are clear and the comparison is unambiguous.
+      Set confidence to 0.5 when the input image is ambiguous or the build preview is low-resolution.
+      Set confidence to 0.0 when you cannot see one or both images, or the images are uninterpretable.
+
+      ## Output
+      Output ONLY valid JSON on a single line with no additional text, markdown, or explanation:
+      {"score": <int 0-10>, "confidence": <float 0.0-1.0>, "findings": ["<finding1>", "<finding2>"]}
+
+      Each finding must be a concrete, specific observation (e.g. "The dome top of the input is
+      approximated by a 3-stud-wide curved LEGO arch"). List 2–4 findings.
+    anchors:
+      - score: 2
+        description: "No resemblance to input — rectangular blob"
+      - score: 5
+        description: "Rough proportions match but details lost"
+      - score: 8
+        description: "Clear resemblance, distinct features visible"
+
+  - id: part_variety
+    name: "Part Variety & Organic Fit"
+    reads: [preview_png, parts_list]
+    prompt: |
+      You are an expert LEGO build evaluator. You will receive:
+      1. A rendered preview PNG of a LEGO build.
+      2. A parts list (text or JSON) listing every LEGO part ID used in the build.
+
+      Your task is to evaluate how well the selected parts fit the subject and whether the build
+      uses an interesting variety of parts rather than only standard bricks.
+
+      ## What to evaluate
+      - Part variety: Does the build use slopes, tiles, curved pieces, plates, or speciality bricks,
+        or does it rely almost entirely on standard 1×N and 2×N bricks?
+      - Organic fit: Do the chosen parts suit the subject? (e.g. rounded slopes for a car body,
+        tiles for a smooth surface, cylinders for pillars)
+      - Part-count efficiency: Are different part sizes used where appropriate, or is everything
+        decomposed into 1×1 bricks unnecessarily?
+      - You are NOT evaluating color, overall shape accuracy, or instruction quality.
+
+      ## Scoring rubric (0–10)
+      0–2  Almost entirely standard rectangular bricks (1×1, 1×2, 2×4, etc.). No attempt to use
+           part geometry to express the subject. The result looks like a rectangular voxel model.
+      3–4  A few non-standard parts (maybe one slope or a plate layer) but variety is minimal.
+           Part choices do not obviously relate to the subject's features.
+      5–6  Moderate variety. Multiple part types present. Some fit the subject well (e.g. slopes on
+           a roof) but other areas are still generic. The build looks partially intentional.
+      7–8  Good variety and fit. Several part families used thoughtfully. The selection clearly
+           serves the subject — curved parts where the subject curves, flat tiles where smoothness
+           is needed.
+      9–10 Excellent variety and fit. Rich palette of parts. Each area of the build uses the most
+           appropriate part geometry. The build looks like an experienced LEGO designer made it.
+
+      ## Confidence guidance
+      Set confidence to 1.0 when the parts list is complete and the preview is clear.
+      Set confidence to 0.5 when the parts list is missing or very short, or preview resolution is low.
+      Set confidence to 0.0 when you cannot interpret the parts list or see the preview image.
+
+      ## Output
+      Output ONLY valid JSON on a single line with no additional text, markdown, or explanation:
+      {"score": <int 0-10>, "confidence": <float 0.0-1.0>, "findings": ["<finding1>", "<finding2>"]}
+
+      Each finding must name specific parts or part families observed (e.g. "Build uses only 1×2 and
+      2×4 bricks throughout — no slopes, tiles, or curved elements detected"). List 2–4 findings.
+    anchors:
+      - score: 2
+        description: "Only standard rectangular bricks, no variety"
+      - score: 5
+        description: "Some slopes or plates but mostly uniform bricks"
+      - score: 8
+        description: "Multiple part families used; choices suit the subject"
+
+  - id: build_stability
+    name: "Build Stability"
+    reads: [ldr_file]
+    prompt: |
+      You are an expert LEGO structural engineer. You will receive the raw text of an LDraw (.ldr)
+      file describing a LEGO build.
+
+      An LDraw file contains lines of the form:
+        1 <color> <x> <y> <z> <rotation matrix> <part_file>
+      where x/y/z are in LDraw units (1 stud = 20 LDU, 1 plate height = 8 LDU).
+
+      Your task is to evaluate the structural stability and interlocking quality of the build.
+
+      ## What to evaluate
+      - Interlocking: Do bricks interlock across layers (studs of one layer inserted into the
+        underside of the layer above), or are layers stacked without offset?
+      - Column stacking: Are identical bricks stacked directly on top of each other in columns
+        without any horizontal offset? This is weak.
+      - Floating bricks: Are any bricks placed with no brick below them (unsupported)?
+      - Thin or narrow sections: Are there 1-stud-wide walls or single-brick towers that would be
+        fragile in a real build?
+      - Base attachment: Is the bottom layer adequately wide to support the build height?
+
+      ## Scoring rubric (0–10)
+      0–2  Severe instability. Most bricks are column-stacked (no interlock), or large floating
+           sections exist, or the base is too narrow for the height. This build would collapse.
+      3–4  Weak stability. Many column stacks. Some interlocking present but not systematic.
+           The build would be fragile and prone to falling apart.
+      5–6  Moderate stability. Some interlocking across layers. A few column stacks remain.
+           The build would hold together with care but might come apart during normal play.
+      7–8  Good stability. Most layers interlock. Column stacks are rare and confined to
+           unimportant areas. The build would survive reasonable handling.
+      9–10 Excellent stability. Systematic interlocking throughout. Masonry-pattern offsets used.
+           No significant floating parts. The build would be robust in a real-world build.
+
+      ## Confidence guidance
+      Set confidence to 1.0 when the LDR file is complete and you can fully analyse the placement grid.
+      Set confidence to 0.5 when the file is truncated, contains unusual non-standard parts, or
+        the coordinate system is ambiguous.
+      Set confidence to 0.0 when the LDR file is empty, unreadable, or not a valid LDraw file.
+
+      ## Output
+      Output ONLY valid JSON on a single line with no additional text, markdown, or explanation:
+      {"score": <int 0-10>, "confidence": <float 0.0-1.0>, "findings": ["<finding1>", "<finding2>"]}
+
+      Each finding must reference specific layer numbers, coordinates, or part types where possible
+      (e.g. "Layers 1–3 show consistent masonry offset; layer 4 has a 1×2 column stack at x=40").
+      List 2–4 findings.
+    anchors:
+      - score: 2
+        description: "Mostly column-stacked; large floating sections"
+      - score: 5
+        description: "Some interlocking but many column stacks remain"
+      - score: 8
+        description: "Systematic interlocking; only minor weak points"
+
+  - id: instruction_clarity
+    name: "Instruction Clarity"
+    reads: [pdf, preview_png]
+    prompt: |
+      You are an expert LEGO instruction book reviewer. You will receive:
+      1. A PDF of LEGO build instructions.
+      2. A rendered preview PNG showing what the finished build should look like.
+
+      Your task is to evaluate how clearly and correctly the instruction PDF communicates the build
+      steps to a first-time builder.
+
+      ## What to evaluate
+      - Step granularity: Are steps broken into manageable chunks, or are too many parts added per
+        step? (Ideal: 1–4 new parts per step for a simple build; up to 8 for complex builds)
+      - Visual clarity: Are the new parts in each step visually distinct (highlighted, circled, or
+        shown as a parts callout)?
+      - Part callouts: Does each step show which specific parts are needed for that step?
+      - Page layout: Is the page uncluttered? Are step numbers clearly visible?
+      - Final image: Does the last step or a final page show the completed model from a good angle?
+      - Consistency with preview: Does the final result in the PDF match the preview PNG?
+
+      ## Scoring rubric (0–10)
+      0–2  Unusable instructions. Missing steps, no part callouts, unclear diagrams, or completely
+           inconsistent with the preview image. A builder could not complete the model from these.
+      3–4  Poor clarity. Steps exist but have major issues: too many parts per step, no highlights
+           for new parts, or the layout is confusing. Most builders would struggle significantly.
+      5–6  Moderate clarity. Instructions are followable with effort. Some steps are too dense.
+           Part callouts present but placement indicators are weak. A motivated builder could finish.
+      7–8  Good clarity. Steps are well-sized, new parts are indicated, callouts are present.
+           Minor layout or labelling issues. Most builders would succeed.
+      9–10 Excellent clarity. Professional-quality instructions. Step granularity is ideal.
+           New parts are clearly highlighted. Callouts are accurate. Final model clearly shown.
+
+      ## Confidence guidance
+      Set confidence to 1.0 when the full PDF is readable and the preview is clear.
+      Set confidence to 0.5 when the PDF is partially rendered, some pages are blank, or image
+        resolution makes part callouts hard to read.
+      Set confidence to 0.0 when the PDF is empty, corrupt, or you cannot extract any content.
+
+      ## Output
+      Output ONLY valid JSON on a single line with no additional text, markdown, or explanation:
+      {"score": <int 0-10>, "confidence": <float 0.0-1.0>, "findings": ["<finding1>", "<finding2>"]}
+
+      Each finding must cite a specific step number or page where the observation applies
+      (e.g. "Step 3 adds 12 new parts with no individual highlights — too dense for a beginner").
+      List 2–4 findings.
+    anchors:
+      - score: 2
+        description: "Unusable — missing steps, no callouts, inconsistent with preview"
+      - score: 5
+        description: "Followable with effort but steps are too dense"
+      - score: 8
+        description: "Clear steps, good callouts, minor layout issues only"
+
+  - id: aesthetics
+    name: "Aesthetics"
+    reads: [preview_png, pdf_first_page, input_image]
+    prompt: |
+      You are an expert LEGO model aesthetics reviewer. You will receive:
+      1. A rendered preview PNG of the finished LEGO build.
+      2. The first page of the instruction PDF (often a cover showing the finished model).
+      3. The original input image that the build was generated from.
+
+      Your task is to evaluate the visual appeal and aesthetic quality of the LEGO build as a
+      standalone object, and how well its colour palette suits the subject.
+
+      ## What to evaluate
+      - Overall visual appeal: Is the build attractive and satisfying to look at?
+      - Color palette coherence: Are the colors harmonious? Do they suit the subject?
+        (e.g. a tree should use greens and browns; a fire truck should use red)
+      - Color accuracy vs. input: Do the dominant colors in the build reflect the dominant
+        colors in the input image?
+      - Proportion and symmetry: Does the build look balanced and well-proportioned?
+      - Surface quality: Does the model have an appealing surface texture from part choices,
+        or does it look rough and unfinished?
+      - You are NOT evaluating structural stability, instruction quality, or shape accuracy.
+
+      ## Scoring rubric (0–10)
+      0–2  Unattractive. Random or clashing colors unrelated to the subject. Poor proportions.
+           The build does not look like a finished LEGO model — it looks like an accident.
+      3–4  Low appeal. Colors present but incoherent or wrong for the subject. Proportions
+           are awkward. The build looks unintentional or unfinished.
+      5–6  Moderate appeal. Colors are in the right family for the subject. Proportions are
+           acceptable. The build is recognisable as an attempt at the subject, though not beautiful.
+      7–8  Good appeal. Colors suit the subject well. The palette is coherent. Proportions look
+           intentional and balanced. This is a respectable LEGO interpretation.
+      9–10 Excellent appeal. The build is visually striking. Color palette is accurate and
+           harmonious. Proportions are pleasing. The model would look good on a display shelf.
+
+      ## Confidence guidance
+      Set confidence to 1.0 when all three images are clear and colours are unambiguous.
+      Set confidence to 0.5 when one image is low-resolution or the colour rendition is suspect.
+      Set confidence to 0.0 when you cannot see one or more of the required images.
+
+      ## Output
+      Output ONLY valid JSON on a single line with no additional text, markdown, or explanation:
+      {"score": <int 0-10>, "confidence": <float 0.0-1.0>, "findings": ["<finding1>", "<finding2>"]}
+
+      Each finding must cite a specific visual observation with colour names or areas
+      (e.g. "Dominant red used for the body matches the input image's red car; grey wheels
+      add appropriate contrast"). List 2–4 findings.
+    anchors:
+      - score: 2
+        description: "Random clashing colors; proportions look accidental"
+      - score: 5
+        description: "Colors roughly match subject but palette is incoherent"
+      - score: 8
+        description: "Harmonious palette, colors accurate to subject, balanced proportions"
+
+  - id: pdf_completeness
+    name: "PDF Completeness"
+    reads: [pdf]
+    prompt: |
+      You are an expert LEGO instruction document reviewer. You will receive the full text and/or
+      rendered pages of a LEGO instruction PDF.
+
+      Your task is to evaluate how complete the PDF is as a stand-alone instruction document —
+      does it contain everything a builder needs to construct the model from scratch?
+
+      ## What to evaluate
+      - Parts inventory: Does the PDF include a complete list of all parts needed (with quantities)?
+      - Step coverage: Are build steps present from the first brick to the finished model?
+        No large jumps or missing intermediate stages.
+      - Page count: Is the document long enough to be plausibly complete for its part count?
+        (A 50-part model with only 3 pages is suspicious.)
+      - Cover and final image: Is there a cover page or final completed-model image?
+      - Numbering: Are step numbers present and sequential with no gaps?
+      - Text and labels: Are part IDs or part names legible where shown?
+
+      ## Scoring rubric (0–10)
+      0–2  Severely incomplete. Missing inventory, steps, or half the document. The PDF could
+           not guide a builder to completion. May be a single page or empty.
+      3–4  Mostly incomplete. Has some steps but no inventory, or large gaps in step coverage,
+           or numbering is missing. Significant sections absent.
+      5–6  Partially complete. Steps are present but inventory may be missing. Some page is
+           blank or cut off. A determined builder could probably finish the model but would
+           need to guess at some points.
+      7–8  Mostly complete. Inventory present, steps covered, numbering sequential. Minor
+           omissions (e.g. no colour key, or last page slightly cut off).
+      9–10 Fully complete. Inventory, sequential numbered steps, cover image, final image,
+           all parts legible. Nothing missing that a real LEGO instruction book would include.
+
+      ## Confidence guidance
+      Set confidence to 1.0 when you can read the full PDF clearly.
+      Set confidence to 0.5 when some pages are unreadable, blank, or the PDF is truncated.
+      Set confidence to 0.0 when the PDF is empty, corrupt, or you cannot extract any content.
+
+      ## Output
+      Output ONLY valid JSON on a single line with no additional text, markdown, or explanation:
+      {"score": <int 0-10>, "confidence": <float 0.0-1.0>, "findings": ["<finding1>", "<finding2>"]}
+
+      Each finding must reference a specific missing or present element with page or step context
+      (e.g. "Page 1 contains a complete parts inventory with quantities for all 47 parts").
+      List 2–4 findings.
+    anchors:
+      - score: 2
+        description: "No inventory, steps missing, document nearly empty"
+      - score: 5
+        description: "Steps present but inventory absent and some steps missing"
+      - score: 8
+        description: "Complete inventory and sequential steps; minor omissions only"
+
+  - id: technical_validity
+    name: "Technical Validity"
+    reads: [ldr_file, parts_list]
+    prompt: |
+      You are an expert LEGO LDraw file validator. You will receive:
+      1. The raw text of an LDraw (.ldr) file.
+      2. A parts list (text or JSON) listing each LEGO part ID used and its quantity.
+
+      An LDraw file contains lines of the form:
+        1 <color> <x> <y> <z> <rotation matrix> <part_file>
+      Coordinates are in LDraw units (1 stud = 20 LDU horizontally; 1 brick height = 24 LDU;
+      1 plate height = 8 LDU). Color codes follow the LDraw colour definition standard.
+
+      Your task is to evaluate whether the LDraw file is technically valid and uses real,
+      existing LEGO parts correctly.
+
+      ## What to evaluate
+      - Part IDs: Do the part file names (e.g. 3001.dat, 3004.dat) correspond to real, known
+        LEGO parts? Unknown or fabricated part IDs are defects.
+      - Color codes: Are the color codes valid LDraw colour numbers? (0=Black, 1=Blue, 4=Red,
+        15=White, 71=Light Bluish Gray, 72=Dark Bluish Gray, etc.)
+      - Grid alignment: Are part positions on a valid LDraw grid?
+        (x and z should be multiples of 20 for standard bricks; y should be multiples of 8 or 24)
+      - Rotation matrices: Are rotation matrices valid orthonormal matrices representing
+        standard LEGO orientations (0°, 90°, 180°, 270° increments only)?
+      - Part-list consistency: Does the count of each part in the LDR file match the parts list?
+      - Syntax: Is the LDraw syntax well-formed (correct number of fields per line type)?
+
+      ## Scoring rubric (0–10)
+      0–2  Severe defects. Many unknown part IDs, invalid coordinates, malformed syntax, or
+           major discrepancy between LDR file and parts list. The file cannot be rendered.
+      3–4  Significant defects. Several unknown parts, off-grid placements, or inconsistent
+           part counts. File would render with errors or missing parts.
+      5–6  Moderate validity. Mostly valid parts and coordinates. A few off-grid placements
+           or minor count discrepancies. File renders but with minor artefacts.
+      7–8  Mostly valid. All or nearly all parts are real LDraw parts. Coordinates are on-grid.
+           Part counts match. Rotation matrices are standard. Minor syntax issues at most.
+      9–10 Fully valid. Every part ID is a real LDraw part. All coordinates on-grid. Rotation
+           matrices are correct. Part counts match exactly. Syntax is perfect.
+
+      ## Confidence guidance
+      Set confidence to 1.0 when you can fully parse the LDR file and verify all parts.
+      Set confidence to 0.5 when the file is large (>500 parts) or uses uncommon part IDs
+        you cannot verify, or the parts list is absent.
+      Set confidence to 0.0 when the LDR file is empty, unreadable, or not valid LDraw syntax.
+
+      ## Output
+      Output ONLY valid JSON on a single line with no additional text, markdown, or explanation:
+      {"score": <int 0-10>, "confidence": <float 0.0-1.0>, "findings": ["<finding1>", "<finding2>"]}
+
+      Each finding must cite specific part IDs, line numbers, or coordinates where possible
+      (e.g. "Part 99999.dat at line 47 is not a recognised LDraw part ID"). List 2–4 findings.
+    anchors:
+      - score: 2
+        description: "Many unknown part IDs, malformed syntax, file unrenderable"
+      - score: 5
+        description: "Mostly valid parts but several off-grid placements or count mismatches"
+      - score: 8
+        description: "All parts valid, on-grid, counts match; minor syntax issues only"
