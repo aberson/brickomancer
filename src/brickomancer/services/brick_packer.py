@@ -1,4 +1,4 @@
-"""Brick packer — greedy layer-by-layer LEGO brick placement algorithm.
+"""Brick packer â€” greedy layer-by-layer LEGO brick placement algorithm.
 
 Public API
 ----------
@@ -11,7 +11,7 @@ interlocking_check(placements, layer) -> list[BrickPlacement]
 
 connectivity_repair(placements) -> list[BrickPlacement]
     Find bricks at y>0 with no stud connection to layer y-1 and force-insert
-    1×1 bricks to restore structural continuity.
+    1Ã—1 bricks to restore structural continuity.
 """
 
 import numpy as np
@@ -29,7 +29,7 @@ def _footprint(bp: BrickPlacement) -> set[tuple[int, int]]:
 
 
 def _has_connection(bp: BrickPlacement, below_footprints: set[tuple[int, int]]) -> bool:
-    """Return True if bp shares ≥1 stud with any brick in the layer below."""
+    """Return True if bp shares â‰¥1 stud with any brick in the layer below."""
     return bool(_footprint(bp) & below_footprints)
 
 
@@ -51,7 +51,7 @@ def interlocking_check(placements: list[BrickPlacement], layer: int) -> list[Bri
     """Check and repair interlocking for bricks at a given layer.
 
     For each brick in *layer* that has no connection to *layer - 1*, remove it
-    and try to replace it with 1×1 bricks that DO connect.  The primary packing
+    and try to replace it with 1Ã—1 bricks that DO connect.  The primary packing
     loop already enforces connectivity, so this function is a safety net for
     edge cases.
 
@@ -77,7 +77,7 @@ def interlocking_check(placements: list[BrickPlacement], layer: int) -> list[Bri
         if _has_connection(bp, below_footprints):
             result.append(bp)
         else:
-            # Replace disconnected brick with connected 1×1 bricks
+            # Replace disconnected brick with connected 1Ã—1 bricks
             for sx, sz in _footprint(bp):
                 if (sx, sz) in below_footprints:
                     result.append(
@@ -95,10 +95,10 @@ def interlocking_check(placements: list[BrickPlacement], layer: int) -> list[Bri
 
 
 def connectivity_repair(placements: list[BrickPlacement]) -> list[BrickPlacement]:
-    """Find and repair floating bricks by inserting 1×1 bridge pillars.
+    """Find and repair floating bricks by inserting 1Ã—1 bridge pillars.
 
     Bricks at y>0 that share no stud with any brick in layer y-1 are
-    force-connected by inserting a 1×1 at the nearest stud in the layer below.
+    force-connected by inserting a 1Ã—1 at the nearest stud in the layer below.
 
     Args:
         placements: List of BrickPlacement objects.
@@ -112,6 +112,7 @@ def connectivity_repair(placements: list[BrickPlacement]) -> list[BrickPlacement
     max_y = max(bp.y for bp in placements)
     to_remove: set[int] = set()  # indices of disconnected bricks to replace
     bridge_bricks: list[BrickPlacement] = []
+    bridge_positions: set[tuple[int, int, int]] = set()  # (x, y, z) dedup
 
     for y in range(1, max_y + 1):
         below_fps = _collect_footprints(placements, y - 1)
@@ -126,20 +127,26 @@ def connectivity_repair(placements: list[BrickPlacement]) -> list[BrickPlacement
                 cx = bp.x + bp.width / 2.0
                 cz = bp.z + bp.length / 2.0
                 nearest = min(below_fps, key=lambda p: (p[0] - cx) ** 2 + (p[1] - cz) ** 2)
-                bridge_bricks.append(
-                    BrickPlacement(
-                        part_id=BRICK_PART_IDS[(1, 1)],
-                        color_id=bp.color_id,
-                        x=nearest[0],
-                        y=y,
-                        z=nearest[1],
-                        width=1,
-                        length=1,
+                pos = (nearest[0], y, nearest[1])
+                if pos not in bridge_positions:
+                    bridge_positions.add(pos)
+                    bridge_bricks.append(
+                        BrickPlacement(
+                            part_id=BRICK_PART_IDS[(1, 1)],
+                            color_id=bp.color_id,
+                            x=nearest[0],
+                            y=y,
+                            z=nearest[1],
+                            width=1,
+                            length=1,
+                        )
                     )
-                )
 
     filtered = [bp for i, bp in enumerate(placements) if i not in to_remove]
-    return filtered + bridge_bricks
+    occupied: set[tuple[int, int, int]] = {
+        (sx, bp.y, sz) for bp in filtered for sx, sz in _footprint(bp)
+    }
+    return filtered + [b for b in bridge_bricks if (b.x, b.y, b.z) not in occupied]
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +163,7 @@ def pack(
 
     Greedy layer-by-layer placement with:
     - Masonry offset (odd layers shifted +1 in X)
-    - Connectivity enforcement: each brick at y>0 must share ≥1 stud with the
+    - Connectivity enforcement: each brick at y>0 must share â‰¥1 stud with the
       layer below; if no brick type achieves this, fall through and rely on
       connectivity_repair.
     - Connectivity repair pass after all layers are placed.
@@ -249,7 +256,7 @@ def pack(
                         break  # break brick_set loop
 
                 if not placed:
-                    # Fall through: single 1×1 without connectivity guarantee
+                    # Fall through: single 1Ã—1 without connectivity guarantee
                     # (connectivity_repair will fix these)
                     candidate_1x1 = BrickPlacement(
                         part_id=BRICK_PART_IDS[(1, 1)],
