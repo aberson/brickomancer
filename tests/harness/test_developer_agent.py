@@ -65,8 +65,8 @@ def _mock_subprocess(returncode: int, stdout: str = "", stderr: str = "") -> Mag
 
 class TestSelectDimension:
     def test_all_weight_on_one_dimension(self) -> None:
-        weights = {aid: (10.0 if aid == "part_variety" else 0.0) for aid in ALL_ADVISOR_IDS}
-        assert _select_dimension(weights) == "part_variety"
+        weights = {aid: (10.0 if aid == "color_match" else 0.0) for aid in ALL_ADVISOR_IDS}
+        assert _select_dimension(weights) == "color_match"
 
     def test_zero_total_weight_still_returns_an_id(self) -> None:
         weights = {aid: 0.0 for aid in ALL_ADVISOR_IDS}
@@ -210,7 +210,7 @@ class TestDeveloperAgentIntegration:
 
     def test_no_token_returns_early(self, tmp_path: Path) -> None:
         """Without CLAUDE_CODE_OAUTH_TOKEN, developer_agent returns SKIPPED_NO_TOKEN."""
-        advisor_results = _fake_advisor_results("part_variety")
+        advisor_results = _fake_advisor_results("color_match")
 
         with patch.dict("os.environ", {}, clear=True):
             # Remove token if present
@@ -227,7 +227,7 @@ class TestDeveloperAgentIntegration:
     def test_claude_timeout_returns_skipped(self, tmp_path: Path) -> None:
         """When the claude subprocess times out, developer_agent returns SKIPPED_TIMEOUT."""
         _setup_source_files(tmp_path)
-        advisor_results = _fake_advisor_results("part_variety")
+        advisor_results = _fake_advisor_results("color_match")
 
         with patch.dict("os.environ", {"CLAUDE_CODE_OAUTH_TOKEN": "fake"}):
             with patch("tests.harness.run_harness.PROJECT_ROOT", tmp_path):

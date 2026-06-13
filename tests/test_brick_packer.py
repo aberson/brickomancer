@@ -15,7 +15,7 @@ import tempfile
 import numpy as np
 import pytest
 
-from brickomancer.models.brick import BRICK_PART_IDS, BrickPlacement
+from brickomancer.models.brick import BRICK_PART_IDS, TILE_PART_IDS, BrickPlacement
 from brickomancer.services.brick_packer import (
     _collect_footprints,
     _footprint,
@@ -239,8 +239,8 @@ class TestPack:
         assert all(bp.y == 0 for bp in result)
 
     def test_part_ids_valid(self):
-        """All part_ids in the output must be in BRICK_PART_IDS values."""
-        valid_ids = set(BRICK_PART_IDS.values())
+        """All part_ids in the output must be in BRICK_PART_IDS or TILE_PART_IDS values."""
+        valid_ids = set(BRICK_PART_IDS.values()) | set(TILE_PART_IDS.values())
         grid = _solid_cube(4)
         result = pack(grid)
         for bp in result:

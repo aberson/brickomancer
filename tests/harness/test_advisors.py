@@ -24,7 +24,7 @@ ADVISORS_YAML = Path(__file__).parent / "advisors.yaml"
 
 EXPECTED_IDS = {
     "shape_fidelity",
-    "part_variety",
+    "color_match",
     "build_stability",
     "instruction_clarity",
     "aesthetics",
@@ -202,7 +202,7 @@ def test_advisor_anchor_descriptions_nonempty(
     "advisor_id, expected_reads",
     [
         ("shape_fidelity", ["preview_png", "input_image"]),
-        ("part_variety", ["preview_png", "parts_list"]),
+        ("color_match", ["preview_png", "input_image"]),
         ("build_stability", ["ldr_file"]),
         ("instruction_clarity", ["pdf", "preview_png"]),
         ("aesthetics", ["preview_png", "pdf_first_page", "input_image"]),

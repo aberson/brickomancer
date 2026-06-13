@@ -16,7 +16,7 @@ connectivity_repair(placements) -> list[BrickPlacement]
 
 import numpy as np
 
-from brickomancer.models.brick import BRICK_PART_IDS, BRICK_TYPES, BrickPlacement
+from brickomancer.models.brick import BRICK_PART_IDS, BRICK_TYPES, TILE_PART_IDS, BrickPlacement
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -39,6 +39,40 @@ def _collect_footprints(placements: list[BrickPlacement], layer: int) -> set[tup
     for bp in placements:
         if bp.y == layer:
             result |= _footprint(bp)
+    return result
+
+
+def _apply_surface_tiles(placements: list[BrickPlacement]) -> list[BrickPlacement]:
+    """Replace top-surface bricks with tile variants for a smooth finished face.
+
+    A brick is top-surface if every stud it covers is at the highest placed
+    layer for that (x, z) column. Tiles share the same footprint and LDraw
+    coordinates as standard bricks but have no studs on top.
+    """
+    top_y_per_stud: dict[tuple[int, int], int] = {}
+    for bp in placements:
+        for sx, sz in _footprint(bp):
+            key = (sx, sz)
+            if key not in top_y_per_stud or bp.y > top_y_per_stud[key]:
+                top_y_per_stud[key] = bp.y
+
+    result: list[BrickPlacement] = []
+    for bp in placements:
+        tile_id = TILE_PART_IDS.get((bp.width, bp.length))
+        if tile_id and all(top_y_per_stud.get(s) == bp.y for s in _footprint(bp)):
+            result.append(
+                BrickPlacement(
+                    part_id=tile_id,
+                    color_id=bp.color_id,
+                    x=bp.x,
+                    y=bp.y,
+                    z=bp.z,
+                    width=bp.width,
+                    length=bp.length,
+                )
+            )
+        else:
+            result.append(bp)
     return result
 
 
@@ -270,6 +304,6 @@ def pack(
                     placements.append(candidate_1x1)
                     covered[x, z] = True
 
-    # Final connectivity repair pass
+    # Final connectivity repair pass, then tile the top surface
     placements = connectivity_repair(placements)
-    return placements
+    return _apply_surface_tiles(placements)

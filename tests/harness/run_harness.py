@@ -53,7 +53,10 @@ _INPUT_IMAGE_PATH = HARNESS_DIR.parent / "integration" / "fixtures" / "cake.jpg"
 # Static dimension → primary source files mapping (relative to PROJECT_ROOT)
 DIMENSION_SOURCE_FILES: dict[str, list[str]] = {
     "shape_fidelity": ["src/brickomancer/services/image_pipeline.py"],
-    "part_variety": ["src/brickomancer/services/brick_packer.py"],
+    "color_match": [
+        "src/brickomancer/services/color_service.py",
+        "src/brickomancer/services/suggestion_service.py",
+    ],
     "build_stability": [
         "src/brickomancer/services/brick_packer.py",
         "src/brickomancer/services/ldraw_writer.py",

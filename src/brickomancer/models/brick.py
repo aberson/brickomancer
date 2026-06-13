@@ -22,6 +22,17 @@ BRICK_PART_IDS: dict[tuple[int, int], str] = {
     (1, 1): "3005",
 }
 
+# Mapping from (width, length) to LDraw tile part ID (smooth top surface, no studs).
+# Used by brick_packer._apply_surface_tiles to replace top-layer bricks with tiles.
+TILE_PART_IDS: dict[tuple[int, int], str] = {
+    (1, 1): "3070b",
+    (1, 2): "3069b",
+    (1, 3): "63864",
+    (1, 4): "2431",
+    (2, 2): "3068b",
+    (2, 4): "87079",
+}
+
 
 @dataclass
 class BrickPlacement:

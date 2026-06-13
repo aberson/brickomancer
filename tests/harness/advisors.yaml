@@ -49,57 +49,58 @@ advisors:
       - score: 8
         description: "Clear resemblance, distinct features visible"
 
-  - id: part_variety
-    name: "Part Variety & Organic Fit"
-    reads: [preview_png, parts_list]
+  - id: color_match
+    name: "Color Match"
+    reads: [preview_png, input_image]
     prompt: |
-      You are an expert LEGO build evaluator. You will receive:
+      You are an expert LEGO build evaluator. You will receive two images:
       1. A rendered preview PNG of a LEGO build.
-      2. A parts list (text or JSON) listing every LEGO part ID used in the build.
+      2. The original input image (real-world object or photo) that the build was generated from.
 
-      Your task is to evaluate how well the selected parts fit the subject and whether the build
-      uses an interesting variety of parts rather than only standard bricks.
+      Your task is to evaluate how accurately the LEGO build's brick colors match the dominant
+      colors of the input image.
 
       ## What to evaluate
-      - Part variety: Does the build use slopes, tiles, curved pieces, plates, or speciality bricks,
-        or does it rely almost entirely on standard 1×N and 2×N bricks?
-      - Organic fit: Do the chosen parts suit the subject? (e.g. rounded slopes for a car body,
-        tiles for a smooth surface, cylinders for pillars)
-      - Part-count efficiency: Are different part sizes used where appropriate, or is everything
-        decomposed into 1×1 bricks unnecessarily?
-      - You are NOT evaluating color, overall shape accuracy, or instruction quality.
+      - Dominant color accuracy: Do the primary brick colors reflect the dominant colors visible
+        in the input image? (e.g. if the input shows a white cake with pink decorations, the build
+        should use white and/or pink bricks — not an unrelated color like blue or yellow)
+      - Color count: Does the build use more than one color where the subject has distinct color
+        regions? A fully monochromatic build for a multi-colored subject is a defect.
+      - Color family: Even if an exact shade match is impossible with LEGO colors, are the brick
+        colors in the right family? (warm/cool, light/dark, saturated/muted)
+      - You are NOT evaluating shape fidelity, part variety, or instruction quality.
 
       ## Scoring rubric (0–10)
-      0–2  Almost entirely standard rectangular bricks (1×1, 1×2, 2×4, etc.). No attempt to use
-           part geometry to express the subject. The result looks like a rectangular voxel model.
-      3–4  A few non-standard parts (maybe one slope or a plate layer) but variety is minimal.
-           Part choices do not obviously relate to the subject's features.
-      5–6  Moderate variety. Multiple part types present. Some fit the subject well (e.g. slopes on
-           a roof) but other areas are still generic. The build looks partially intentional.
-      7–8  Good variety and fit. Several part families used thoughtfully. The selection clearly
-           serves the subject — curved parts where the subject curves, flat tiles where smoothness
-           is needed.
-      9–10 Excellent variety and fit. Rich palette of parts. Each area of the build uses the most
-           appropriate part geometry. The build looks like an experienced LEGO designer made it.
+      0–2  No match. The build colors are completely unrelated to the input image. A white cake
+           rendered entirely in blue bricks, for example.
+      3–4  Weak match. Colors are in a vague ballpark but clearly wrong — the dominant hue is
+           incorrect, or a major color region of the input is not represented at all.
+      5–6  Moderate match. The single dominant color is approximately right, but secondary colors
+           are absent and the build is monochromatic where the subject has 2–3 distinct regions.
+      7–8  Good match. The dominant color is correct and at least one secondary color is present.
+           Minor inaccuracies in shade or hue are acceptable at this level.
+      9–10 Excellent match. All major color regions of the input are represented with appropriately
+           chosen LEGO colors. The palette immediately reads as the subject.
 
       ## Confidence guidance
-      Set confidence to 1.0 when the parts list is complete and the preview is clear.
-      Set confidence to 0.5 when the parts list is missing or very short, or preview resolution is low.
-      Set confidence to 0.0 when you cannot interpret the parts list or see the preview image.
+      Set confidence to 1.0 when both images are clear and colors are unambiguous.
+      Set confidence to 0.5 when one image is low-resolution or colors are hard to distinguish.
+      Set confidence to 0.0 when you cannot see one or both images.
 
       ## Output
       Output ONLY valid JSON on a single line with no additional text, markdown, or explanation:
       {"score": <int 0-10>, "confidence": <float 0.0-1.0>, "findings": ["<finding1>", "<finding2>"]}
 
-      Each finding must name specific parts or part families observed (e.g. "Build uses only 1×2 and
-      2×4 bricks throughout — no slopes, tiles, or curved elements detected"). List 2–4 findings.
+      Each finding must name specific colors observed in both images
+      (e.g. "Input shows cream/white frosting and pink decorations; build uses only yellow bricks
+      with no pink or white present"). List 2–4 findings.
     anchors:
       - score: 2
-        description: "Only standard rectangular bricks, no variety"
+        description: "Build color completely unrelated to input — wrong hue family entirely"
       - score: 5
-        description: "Some slopes or plates but mostly uniform bricks"
+        description: "Dominant color roughly correct but all secondary colors absent"
       - score: 8
-        description: "Multiple part families used; choices suit the subject"
+        description: "Dominant and key secondary colors both represented; minor shade differences"
 
   - id: build_stability
     name: "Build Stability"
