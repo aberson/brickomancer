@@ -26,8 +26,15 @@ uv sync                                           # Install Python deps
 cd frontend; npm install; cd ..                   # Install JS deps
 uv run python scripts/download_data.py            # Fetch Rebrickable CSVs + LDConfig.ldr
 
+# TripoSR deps — NOT in pyproject.toml (CUDA-specific; run once after uv sync)
+# GPU: RTX 4070 Laptop, CUDA 11.8 wheels (cu118) work on driver 596 / CUDA 12.x
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+uv pip install omegaconf einops "transformers<5.0.0" huggingface-hub "imageio[ffmpeg]" PyMCubes
+# transformers must stay <5.0.0 — v5 renamed ViT internal keys; TripoSR checkpoint requires 4.x names
+
 # Run (Windows — fastapi dev fails on cp1252 terminals due to emoji; use uvicorn directly)
-uv run uvicorn --app-dir src brickomancer.main:app --reload  # Backend → http://localhost:8000
+$env:PATH += ";C:\Tools\LPub3D"                              # Must be set before starting server
+uv run uvicorn --app-dir src brickomancer.main:app           # Backend → http://localhost:8000 (no --reload)
 cd frontend; npm run dev                                     # Frontend → http://localhost:5173
 
 # Quality gates
@@ -76,14 +83,16 @@ brickomancer/
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11). Full pipeline implemented: image/text → voxels → brick pack → LDraw → LDView previews → suggestion cards → LPub3D instruction PDF. React 4-step UI wired. 182 unit tests passing, 0 type errors, 0 lint violations. Integration smoke tests in `tests/integration/` (skip when services unavailable). M1 UAT in progress (2026-06-12): TripoSR installed, rembg[cpu] installed, LDView rendering confirmed (yellow bricks), LDConfig.ldr committed. Remaining M1 steps: PDF endpoint test, llama-server text pipeline test, full browser UI test.
+Steps 1–11 complete (2026-06-11). Full pipeline implemented: image/text → voxels → brick pack → LDraw → LDView previews → suggestion cards → LPub3D instruction PDF. React 4-step UI wired. 182 unit tests passing, 0 type errors, 0 lint violations. Integration smoke tests in `tests/integration/` (skip when services unavailable). M1 UAT in progress (2026-06-12): image pipeline end-to-end confirmed (TripoSR → 3 suggestions → preview PNGs → LPub3D PDF). Remaining M1 steps: llama-server text pipeline test, full browser UI test.
 
 ## Environment requirements
 
 - Windows 11, Python 3.12+, uv, Node.js 20+
-- CUDA GPU 6 GB+ VRAM (TripoSR inference; confirmed via void_furnace substrate running 30B+ GGUFs)
-- llama-server running before backend start (port 8080)
-- LDView installed + on PATH
-- LPub3D installed + on PATH
-- `CLAUDE_CODE_OAUTH_TOKEN` in `.env` (matches void_furnace auth pattern; not ANTHROPIC_API_KEY)
+- CUDA GPU 6 GB+ VRAM (RTX 4070 Laptop confirmed; TripoSR loads ~1.5 GB VRAM)
+- llama-server running before backend start (port 8080) — text pipeline only; image pipeline works without it
+- LDView auto-detected at `C:\Tools\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe` (no PATH needed)
+- LPub3D on PATH (`$env:PATH += ";C:\Tools\LPub3D"`) before starting server
+- TripoSR deps installed separately (see Key commands above) — `transformers<5.0.0` is a hard constraint
+- TripoSR source at `C:\Users\abero\dev\TripoSR` (via `triposr.pth`); model downloads from HF on first request
+- `CLAUDE_CODE_OAUTH_TOKEN` in `.env` (for piece detection subprocess; never ANTHROPIC_API_KEY)
 - `PYTHONIOENCODING=utf-8` recommended (workspace Unicode print rule)
