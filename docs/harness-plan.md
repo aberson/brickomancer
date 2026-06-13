@@ -303,6 +303,7 @@ that need the LDR file read it as plain text.
   completes without error (dry-run skips actual API calls), server starts and stops
   cleanly on port 8005, scores.jsonl is created with a stub entry
 - **Depends on:** 12
+- **Status:** DONE (2026-06-12)
 
 <!-- autofix-applied: 2026-06-12 -->
 ### Step 14: Pipeline executor — API call, PDF download, artifact collection
