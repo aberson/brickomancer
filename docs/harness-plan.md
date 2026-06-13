@@ -396,6 +396,7 @@ that need the LDR file read it as plain text.
 - **Done when:** Operator confirms all checklist items above; no unhandled exceptions
   in harness output
 - **Depends on:** 16
+- **Status:** DONE (2026-06-13)
 
 ### Step 18: Advisor calibration review
 - **Problem:** Operator reads `runs/iteration_1/advisor_reports.json` and
@@ -412,6 +413,7 @@ that need the LDR file read it as plain text.
 - **Done when:** Operator satisfied that all 7 advisor scores are plausibly
   calibrated; no advisor has a score that contradicts its findings narrative
 - **Depends on:** 17
+- **Status:** DONE (2026-06-13)
 
 ## 8. Risks and Open Questions
 
@@ -495,9 +497,29 @@ Fix needed: raise `ADVISOR_TIMEOUT_S` (try 120s), or truncate/summarise LDR cont
 - Claude proposed: "Add LPub3D COVER_PAGE and BOM meta-commands to the LDraw file"
 - Change was applied to ldraw_writer.py; pytest failed (SKIPPED_REVERT); file reverted cleanly
 
-### Next steps
+### Fixes applied (2026-06-13)
 
-1. Fix Bug 1: correct image-passing for `claude -p`
-2. Fix Bug 2: raise timeout or truncate LDR content
-3. Re-run Step 17 smoke gate
-4. Step 18 calibration review
+**Bug 1 — `--image` replaced with Read-tool-in-prompt approach**
+
+Images now passed as absolute paths appended to prompt_parts before full_prompt assembly:
+```
+"\n\nThe rendered LEGO preview image is at this absolute path: {preview_png}\n"
+"Use your Read tool to view this image."
+```
+Same fix applied to `subprocess_utils.run_claude_subprocess` (piece detector). Test `test_command_format` updated to assert `--image` absent.
+
+**Bug 2 — Timeouts and LDR truncation**
+
+- `ADVISOR_TIMEOUT_S`: 30 → 240s
+- `DEVELOPER_TIMEOUT_S`: 120 → 300s
+- LDR content truncated to 400 lines before embedding (was causing oversized prompts for `build_stability`)
+
+Note: Pages-parameter PDF read was tried but broke PDF reading (requires `pdftoppm`, not available on this system). Reverted to full-content read.
+
+### Step 17 re-run result (2026-06-13)
+
+7/7 advisors completed with real scores. Developer agent ran full loop (wrote change, tests failed, reverted cleanly). Representative scores: part_variety=1 (correct — build uses 4 rectangular brick types only), technical_validity=6–7, pdf_completeness=4, shape_fidelity=2–3.
+
+### Step 18 calibration result (2026-06-13)
+
+No calibration changes needed. All advisors returned scores in 1–7 range with findings that narratively match the scores. `part_variety` scoring 1 consistently is correct, not miscalibration — the cake build uses only 4 rectangular brick types. No advisor scored 9–10 (too lenient). `advisors.yaml` unchanged.

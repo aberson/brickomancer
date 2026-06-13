@@ -45,8 +45,8 @@ POLL_TIMEOUT_S = 60
 POLL_INTERVAL_S = 2.0
 QUALITY_THRESHOLD = 8.0
 ADVISORS_YAML = HARNESS_DIR / "advisors.yaml"
-ADVISOR_TIMEOUT_S = 30
-DEVELOPER_TIMEOUT_S = 120
+ADVISOR_TIMEOUT_S = 240
+DEVELOPER_TIMEOUT_S = 300
 
 _INPUT_IMAGE_PATH = HARNESS_DIR.parent / "integration" / "fixtures" / "cake.jpg"
 
@@ -274,8 +274,12 @@ def _run_single_advisor(
                 ldr_text = ""
         if "ldr_file" in reads:
             if ldr_text:
+                lines = ldr_text.splitlines()
+                truncated = len(lines) > 400
+                display = "\n".join(lines[:400])
+                suffix = f"\n[... truncated at 400/{len(lines)} lines ...]" if truncated else ""
                 prompt_parts.append(
-                    f"\n\n--- LDraw file contents ---\n{ldr_text}\n--- end of LDraw file ---"
+                    f"\n\n--- LDraw file contents ---\n{display}{suffix}\n--- end of LDraw file ---"
                 )
             else:
                 prompt_parts.append("\n\n[LDraw file not available for this iteration]")
@@ -299,23 +303,29 @@ def _run_single_advisor(
                     "Use your Read tool to read the first page (page 1) of the PDF."
                 )
 
-    full_prompt = "".join(prompt_parts)
-    cmd: list[str] = ["claude", "-p", full_prompt]
-
     if "preview_png" in reads:
         preview_png = iteration_state.get("preview_png_path")
         if preview_png and Path(preview_png).exists():
-            cmd += ["--image", preview_png]
+            prompt_parts.append(
+                f"\n\nThe rendered LEGO preview image is at this absolute path: {preview_png}\n"
+                "Use your Read tool to view this image."
+            )
         else:
-            log.warning("Advisor %s: preview_png not available — omitting --image", advisor_id)
+            log.warning("Advisor %s: preview_png not available", advisor_id)
 
     if "input_image" in reads:
         if _INPUT_IMAGE_PATH.exists():
-            cmd += ["--image", str(_INPUT_IMAGE_PATH)]
+            prompt_parts.append(
+                f"\n\nThe original input image is at this absolute path: {_INPUT_IMAGE_PATH}\n"
+                "Use your Read tool to view this image."
+            )
         else:
             log.warning(
                 "Advisor %s: input_image fixture not found at %s", advisor_id, _INPUT_IMAGE_PATH
             )
+
+    full_prompt = "".join(prompt_parts)
+    cmd: list[str] = ["claude", "-p", full_prompt]
 
     env = {**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": token}
     try:

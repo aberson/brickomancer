@@ -249,8 +249,10 @@ class TestRunClaudeSubprocess:
         assert cmd[0] == "claude"
         assert "--output-format" not in cmd
         assert "-p" in cmd
-        assert "--image" in cmd
-        assert "/path/to/image.jpg" in cmd
+        assert "--image" not in cmd
+        # Image path is embedded in the prompt text, not passed as a flag
+        p_idx = cmd.index("-p")
+        assert "/path/to/image.jpg" in cmd[p_idx + 1]
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "tok"
 

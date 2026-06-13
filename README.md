@@ -117,4 +117,4 @@ scripts/
 
 ## Status
 
-**Harness Steps 12–16 complete** — issues #17–21 closed. Quality hill-climbing harness scaffolded end-to-end: 7-advisor parallel scoring, z-score normalisation, weighted developer agent, per-iteration git commit. Desktop launcher at `scripts/run_harness.bat`. 302 tests passing, 0 type errors, 0 lint violations. Pending: fix `--image` flag and LDR advisor timeout (Step 17 UAT revealed both).
+**Harness Steps 12–18 complete** — issues #17–24 closed. Quality hill-climbing harness fully operational: 7-advisor parallel scoring (all 7 return real scores per run), z-score normalisation, weighted developer agent, per-iteration git commit/revert gate. Desktop launcher at `scripts/run_harness.bat`. 303 tests passing, 0 type errors, 0 lint violations.

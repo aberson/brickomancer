@@ -78,18 +78,18 @@ brickomancer/
 - `llama-server` on port 8080 with Llama 3.2-1B GGUF (void_furnace llama.cpp setup)
 - `LDView` auto-detected at `C:\Tools\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe` (no PATH needed)
 - `LPub3D.exe` on PATH (install at `C:\Tools\LPub3D\`; add to `$env:PATH` before starting server)
-- `CLAUDE_CODE_OAUTH_TOKEN` in `.env` (for piece detection subprocess; never ANTHROPIC_API_KEY)
+- `CLAUDE_CODE_OAUTH_TOKEN` as Windows user env var (for piece detection subprocess; never ANTHROPIC_API_KEY)
 - Start server WITHOUT `--reload` — WatchFiles subprocess does not inherit session PATH
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11); Harness Steps 12–16 complete (2026-06-13). Quality hill-climbing harness built end-to-end: 7-advisor parallel Claude scoring, z-score normalization, weighted developer-agent loop with git commit/revert gate. Desktop launcher at `scripts/run_harness.bat` (double-click to run). 302 unit tests passing, 0 type errors, 0 lint violations.
+Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete (2026-06-13). Quality hill-climbing harness fully operational: 7/7 advisors return real scores per iteration, weighted developer-agent loop with git commit/revert gate. Desktop launcher at `scripts/run_harness.bat` (double-click to run). 303 unit tests passing, 0 type errors, 0 lint violations.
 
-**Two bugs found in first UAT run (Step 17), need fixing before harness is usable:**
-1. `claude -p --image <path>` fails — `--image` is not a recognized flag in the installed claude CLI; image-reading advisors (shape_fidelity, aesthetics, part_variety, instruction_clarity) all exit 1
-2. LDR-file advisors (build_stability, technical_validity) hit 30s timeout — embedded LDR content makes prompts too large for the default timeout
+**Harness image-passing note:** `claude -p` does not support `--image`. Images (preview PNG, input image) are passed as absolute paths in the prompt with "Use your Read tool to view this image." Same pattern used by PDF advisors. LDR content truncated to 400 lines before embedding. Advisor timeout 240s, developer timeout 300s.
 
-**Next action:** Investigate correct image-passing mechanism for `claude -p` (check `claude --help` output), then fix `advisor_engine` to use the correct approach. Separately raise the LDR advisor timeout or truncate the LDR content.
+**`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as Windows user environment variable (not `.env` file). Inherited by the desktop `.bat` launcher automatically. When running from PowerShell/Bash tools, load it explicitly: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`
+
+**Next action:** Run `scripts/run_harness.bat` for overnight hill-climbing iterations.
 
 ## Environment requirements
 
@@ -100,5 +100,5 @@ Steps 1–11 complete (2026-06-11); Harness Steps 12–16 complete (2026-06-13).
 - LPub3D on PATH (`$env:PATH += ";C:\Tools\LPub3D"`) before starting server
 - TripoSR deps installed separately (see Key commands above) — `transformers<5.0.0` is a hard constraint
 - TripoSR source at `C:\Users\abero\dev\TripoSR` (via `triposr.pth`); model downloads from HF on first request
-- `CLAUDE_CODE_OAUTH_TOKEN` in `.env` (for piece detection subprocess; never ANTHROPIC_API_KEY)
+- `CLAUDE_CODE_OAUTH_TOKEN` as Windows user environment variable (not `.env`; inherited by `.bat` launcher; load manually in PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`)
 - `PYTHONIOENCODING=utf-8` recommended (workspace Unicode print rule)

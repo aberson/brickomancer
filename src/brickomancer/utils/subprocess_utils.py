@@ -30,7 +30,11 @@ def run_claude_subprocess(prompt: str, image_path: str) -> str:
     if not token:
         raise RuntimeError("CLAUDE_CODE_OAUTH_TOKEN not set")
 
-    cmd = ["claude", "-p", prompt, "--image", image_path]
+    full_prompt = (
+        f"{prompt}\n\nThe image to analyze is at this absolute path: {image_path}\n"
+        "Use your Read tool to view this image."
+    )
+    cmd = ["claude", "-p", full_prompt]
     result = subprocess.run(
         cmd,
         capture_output=True,
