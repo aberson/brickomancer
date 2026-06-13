@@ -83,7 +83,13 @@ brickomancer/
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11). Full pipeline implemented: image/text → voxels → brick pack → LDraw → LDView previews → suggestion cards → LPub3D instruction PDF. React 4-step UI wired. 182 unit tests passing, 0 type errors, 0 lint violations. Integration smoke tests in `tests/integration/` (skip when services unavailable). M1 UAT in progress (2026-06-12): image pipeline end-to-end confirmed (TripoSR → 3 suggestions → preview PNGs → LPub3D PDF). Remaining M1 steps: llama-server text pipeline test, full browser UI test.
+Steps 1–11 complete (2026-06-11); Harness Steps 12–16 complete (2026-06-13). Quality hill-climbing harness built end-to-end: 7-advisor parallel Claude scoring, z-score normalization, weighted developer-agent loop with git commit/revert gate. Desktop launcher at `scripts/run_harness.bat` (double-click to run). 302 unit tests passing, 0 type errors, 0 lint violations.
+
+**Two bugs found in first UAT run (Step 17), need fixing before harness is usable:**
+1. `claude -p --image <path>` fails — `--image` is not a recognized flag in the installed claude CLI; image-reading advisors (shape_fidelity, aesthetics, part_variety, instruction_clarity) all exit 1
+2. LDR-file advisors (build_stability, technical_validity) hit 30s timeout — embedded LDR content makes prompts too large for the default timeout
+
+**Next action:** Investigate correct image-passing mechanism for `claude -p` (check `claude --help` output), then fix `advisor_engine` to use the correct approach. Separately raise the LDR advisor timeout or truncate the LDR content.
 
 ## Environment requirements
 

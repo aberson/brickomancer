@@ -450,3 +450,54 @@ Step 17 (smoke gate) is the primary integration test for the harness itself. It 
 the full loop works with real TripoSR inference, real LPub3D PDF generation, and real
 advisor scoring. This is deliberately an operator step — the harness cannot test itself
 automatically without running the full 30–60s TripoSR pipeline.
+
+---
+
+## Session notes — 2026-06-13
+
+### Completed this session
+
+Steps 12–16 built and merged. Desktop launcher (`scripts/run_harness.bat`) created.
+302 tests, 0 type errors, 0 lint violations.
+
+### Step 17 UAT run — bugs found (2026-06-13)
+
+First harness run with default 5 iterations. Pipeline executor succeeded (PDF 469 KB, preview PNG copied). Advisor engine encountered two bugs:
+
+**Bug 1 — `--image` flag not recognised by installed claude CLI**
+
+Affects: shape_fidelity, aesthetics, part_variety, instruction_clarity (all add `--image <path>` for preview_png or input_image reads).
+
+```
+[HARNESS] Advisor shape_fidelity exited 1: error: unknown option '--image'
+[HARNESS] Advisor aesthetics exited 1: error: unknown option '--image'
+[HARNESS] Advisor part_variety exited 1: error: unknown option '--image'
+[HARNESS] Advisor instruction_clarity exited 1: error: unknown option '--image'
+```
+
+Fix needed: investigate the correct image-passing mechanism for `claude -p` in the installed version (`claude --help`). Likely options: different flag name, stdin pipe, or base64-in-prompt.
+
+**Bug 2 — LDR-file advisors timeout at 30s**
+
+Affects: build_stability, technical_validity (embed full LDR file text in prompt body).
+
+```
+[HARNESS] Advisor technical_validity timed out after 30s
+[HARNESS] Advisor build_stability timed out after 30s
+```
+
+Fix needed: raise `ADVISOR_TIMEOUT_S` (try 120s), or truncate/summarise LDR content before embedding (LDR files can be 1000+ lines).
+
+**What did work:**
+
+- pdf_completeness (reads [pdf] only — no --image, no LDR embed) returned real score 4 with findings
+- Developer agent correctly selected pdf_completeness (lowest normalized score)
+- Claude proposed: "Add LPub3D COVER_PAGE and BOM meta-commands to the LDraw file"
+- Change was applied to ldraw_writer.py; pytest failed (SKIPPED_REVERT); file reverted cleanly
+
+### Next steps
+
+1. Fix Bug 1: correct image-passing for `claude -p`
+2. Fix Bug 2: raise timeout or truncate LDR content
+3. Re-run Step 17 smoke gate
+4. Step 18 calibration review

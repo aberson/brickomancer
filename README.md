@@ -117,4 +117,4 @@ scripts/
 
 ## Status
 
-**Steps 1–11 complete** — issues #1–12 closed. Full pipeline: image/text → voxels → brick pack → LDraw → LDView previews → LPub3D instruction PDF. React 4-step UI. 176 tests passing, 0 type errors, 0 lint violations. Pending: Step M1 manual UAT.
+**Harness Steps 12–16 complete** — issues #17–21 closed. Quality hill-climbing harness scaffolded end-to-end: 7-advisor parallel scoring, z-score normalisation, weighted developer agent, per-iteration git commit. Desktop launcher at `scripts/run_harness.bat`. 302 tests passing, 0 type errors, 0 lint violations. Pending: fix `--image` flag and LDR advisor timeout (Step 17 UAT revealed both).

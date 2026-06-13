@@ -5,6 +5,12 @@
 tmp/*
 !tmp/.gitkeep
 
+# Harness runtime output (reproduced by running run_harness.py)
+tests/harness/runs/*
+!tests/harness/runs/.gitkeep
+tests/harness/scores.jsonl
+tests/harness/server.log
+
 # Rebrickable data (re-downloaded via scripts/download_data.py)
 data/rebrickable/*
 !data/rebrickable/.gitkeep
