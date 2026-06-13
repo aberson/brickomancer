@@ -65,7 +65,9 @@ brickomancer/
   data/ldraw/                 # LDConfig.ldr + dimensions.csv
   tmp/                        # Per-request scratch (gitignored)
   tests/                      # Unit tests + integration/test_smoke.py
+                              # tests/harness/ — run_harness.py, advisors.yaml, scores.jsonl, runs/
   scripts/download_data.py
+  .claude/skills/run-harness/ # /run-harness skill (prep + launch + monitor)
 ```
 
 ## Architecture summary
@@ -83,13 +85,15 @@ brickomancer/
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete (2026-06-13). Quality hill-climbing harness fully operational: 7/7 advisors return real scores per iteration, weighted developer-agent loop with git commit/revert gate. Desktop launcher at `scripts/run_harness.bat` (double-click to run). 303 unit tests passing, 0 type errors, 0 lint violations.
+Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes (2026-06-13). Quality hill-climbing harness fully operational: 7/7 advisors return real scores per iteration, weighted developer-agent loop, pytest gate (unit tests only — `--ignore=tests/integration`), avg-raw quality gate (stops when avg advisor score ≥ 8.0 / 7.0). Desktop launcher at `scripts/run_harness.bat`. `/run-harness` skill for one-command prep + launch + monitoring. 303 unit tests passing, 0 type errors, 0 lint violations.
 
 **Harness image-passing note:** `claude -p` does not support `--image`. Images (preview PNG, input image) are passed as absolute paths in the prompt with "Use your Read tool to view this image." Same pattern used by PDF advisors. LDR content truncated to 400 lines before embedding. Advisor timeout 240s, developer timeout 300s.
 
 **`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as Windows user environment variable (not `.env` file). Inherited by the desktop `.bat` launcher automatically. When running from PowerShell/Bash tools, load it explicitly: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`
 
-**Next action:** Run `scripts/run_harness.bat` for overnight hill-climbing iterations.
+**pytest note:** `uv run pytest -q` alone will fail if a server is running on port 8000 (integration smoke tests hit it). Use `uv run pytest -q --ignore=tests/integration` for the clean gate. The harness always uses `--ignore=tests/integration`.
+
+**Next action:** Run `/run-harness` (or double-click `scripts/run_harness.bat`) for overnight hill-climbing.
 
 ## Environment requirements
 

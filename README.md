@@ -117,4 +117,4 @@ scripts/
 
 ## Status
 
-**Harness Steps 12–18 complete** — issues #17–24 closed. Quality hill-climbing harness fully operational: 7-advisor parallel scoring (all 7 return real scores per run), z-score normalisation, weighted developer agent, per-iteration git commit/revert gate. Desktop launcher at `scripts/run_harness.bat`. 303 tests passing, 0 type errors, 0 lint violations.
+**Harness Steps 12–18 complete + post-build fixes** — issues #17–25 closed. Quality hill-climbing harness fully operational: 7-advisor parallel scoring, weighted developer agent, per-iteration pytest gate (unit tests only), avg-raw quality gate. `/run-harness` skill for one-command prep + launch + monitoring. Desktop launcher at `scripts/run_harness.bat`. 303 tests passing, 0 type errors, 0 lint violations.

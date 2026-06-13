@@ -443,8 +443,8 @@ that need the LDR file read it as plain text.
 
 - `tests/integration/test_smoke.py` — unchanged; uses port 8000. Harness uses 8005.
   No conflict.
-- `uv run pytest -q` — run as quality gate after each developer agent change.
-  182 passing tests must stay passing.
+- `uv run pytest -q --ignore=tests/integration` — run as quality gate after each developer agent change.
+  303 passing tests must stay passing.
 
 **End-to-end verification:**
 
@@ -454,6 +454,32 @@ advisor scoring. This is deliberately an operator step — the harness cannot te
 automatically without running the full 30–60s TripoSR pipeline.
 
 ---
+
+## 10. Post-Build Fixes (2026-06-13)
+
+Three bugs found during first full harness run, all fixed before overnight hill-climbing.
+
+### Bug A — pytest gate blocked by integration smoke tests
+
+**Symptom:** Every developer change was reverted (`SKIPPED_REVERT`). The harness pytest gate ran `uv run pytest -q --tb=short` with no exclusions. The two integration smoke tests (`test_smoke.py`) hit `localhost:8000`, which was occupied by an orphaned server from a prior session, and returned HTTP 503 (TripoSR not loaded). Both tests failed on every gate invocation, regardless of developer changes.
+
+**Fix:** Added `--ignore=tests/integration` to the pytest invocation. Also added failure logging (stdout/stderr of pytest printed to harness log on non-zero exit). Commit: `957c55f`.
+
+### Bug B — quality gate unreachable (avg_normalized always 5.0)
+
+**Symptom:** `QUALITY_THRESHOLD = 8.0` was checked against `avg_normalized`, which is always exactly 5.0 by construction (z-score normalization forces the mean to 5.0). The gate could never trigger. Additionally, the gate had a log message but no `break` — it would have logged and continued even if the condition somehow fired.
+
+**Fix:** Changed threshold check to use `avg_raw` (mean of the 1–7 raw advisor scores). Added `break` on threshold met. Added `avg_raw` field to `scores.jsonl` entries and to the in-memory `advisor_results` report. Commit: `696593c`.
+
+### Bug C — stray LDView POV-Ray file in project root
+
+**Symptom:** LDView generated a `1` file (POV-Ray scene source) in the project root during an earlier harness run. This was an untracked file picked up by `git status`.
+
+**Fix:** Deleted the file.
+
+### `/run-harness` skill added
+
+After diagnosing the above, a `/run-harness` skill was written at `.claude/skills/run-harness/SKILL.md`. It handles pre-flight checks, displays a run-config panel (image thumbnail, baseline scores with trend arrows, source file map), waits for "go", launches the harness in the background, and posts status updates at 30s / 1m / 2m / 5m then every 10 min. Includes clickable PDF links per completed iteration and auto-pushes on completion. Commit: `8c1688f`.
 
 ## Session notes — 2026-06-13
 
