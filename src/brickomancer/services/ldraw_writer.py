@@ -105,7 +105,8 @@ def write_ldr(
 
     Bricks are grouped by Y-layer (ascending voxel layer) so each layer
     is a distinct build step.  Large layers are split into sub-steps of 8.
-    A ``0 STEP`` marker is inserted after each step *except* the last.
+    A ``0 STEP`` marker is inserted after every step, including the last,
+    so LPub3D renders each step as a separate page.
 
     Args:
         placements: list[BrickPlacement] to write.
@@ -129,9 +130,7 @@ def write_ldr(
     for step_idx, step_bricks in enumerate(steps):
         for bp in step_bricks:
             lines.append(_brick_line(bp))
-        # Insert 0 STEP after every step except the very last
-        if step_idx < len(steps) - 1:
-            lines.append("0 STEP")
+        lines.append("0 STEP")
 
     parent = os.path.dirname(os.path.abspath(output_path))
     if parent:

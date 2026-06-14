@@ -325,7 +325,7 @@ class TestWriteLdr:
             assert "1 15 20 -48 60 1 0 0 0 1 0 0 0 1 3004.dat" in content
 
     def test_step_markers_every_8(self):
-        """0 STEP should appear after every 8 bricks, not at the end."""
+        """0 STEP should appear after every batch of 8, including the last."""
         bricks = [_make_bp(i, 0, 0) for i in range(17)]
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "steps.ldr")
@@ -333,26 +333,26 @@ class TestWriteLdr:
             content = open(path, encoding="utf-8").read()
             lines = content.splitlines()
             step_indices = [i for i, line in enumerate(lines) if line.strip() == "0 STEP"]
-            # 17 bricks → 3 batches (8, 8, 1) → 2 STEP markers
-            assert len(step_indices) == 2
+            # 17 bricks → 3 batches (8, 8, 1) → 3 STEP markers (one per batch)
+            assert len(step_indices) == 3
 
-    def test_no_trailing_step_marker(self):
-        """The last batch must NOT be followed by 0 STEP."""
+    def test_trailing_step_marker_present(self):
+        """The last batch must be followed by 0 STEP so LPub3D renders it."""
         bricks = [_make_bp(i, 0, 0) for i in range(8)]
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "nostep.ldr")
+            path = os.path.join(tmpdir, "laststep.ldr")
             write_ldr(bricks, path)
             content = open(path, encoding="utf-8").read()
-            assert "0 STEP" not in content
+            assert content.count("0 STEP") == 1
 
     def test_step_marker_after_exactly_8(self):
-        """16 bricks → exactly 1 STEP marker in the middle."""
+        """16 bricks → exactly 2 STEP markers, one per batch."""
         bricks = [_make_bp(i, 0, 0) for i in range(16)]
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "mid.ldr")
             write_ldr(bricks, path)
             content = open(path, encoding="utf-8").read()
-            assert content.count("0 STEP") == 1
+            assert content.count("0 STEP") == 2
 
 
 # ---------------------------------------------------------------------------
