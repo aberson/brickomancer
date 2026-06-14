@@ -1,4 +1,4 @@
-"""Image pipeline â€” rembg background removal, TripoSR mesh generation, voxelization.
+"""Image pipeline — rembg background removal, TripoSR mesh generation, voxelization.
 
 TripoSR and torch are NOT listed in pyproject.toml (CUDA-specific install required
 separately).  rembg requires onnxruntime (CPU or GPU variant).  Both imports are
@@ -14,7 +14,7 @@ import trimesh
 from PIL import Image
 
 # ---------------------------------------------------------------------------
-# Optional rembg import â€” guarded because rembg calls sys.exit(1) when
+# Optional rembg import — guarded because rembg calls sys.exit(1) when
 # onnxruntime is absent, which would crash the collection phase.
 # ---------------------------------------------------------------------------
 try:
@@ -26,7 +26,7 @@ except (ImportError, SystemExit):
     _REMBG_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
-# Optional TripoSR import â€” guarded so the module loads without CUDA deps.
+# Optional TripoSR import — guarded so the module loads without CUDA deps.
 # ---------------------------------------------------------------------------
 try:
     from tsr.system import TSR as _TSR  # type: ignore[import-untyped]
@@ -38,7 +38,7 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers â€” constants
+# Internal helpers — constants
 # ---------------------------------------------------------------------------
 
 # 1 LEGO stud = 8 LDU (LDraw Units) = 9.6 mm = 0.0096 m.
@@ -53,7 +53,7 @@ _STUD_METERS: float = 0.0096
 _MIN_FOOTPRINT_STUDS: int = 20
 
 # ---------------------------------------------------------------------------
-# Internal helpers â€” functions
+# Internal helpers — functions
 # ---------------------------------------------------------------------------
 
 
@@ -175,12 +175,13 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
         footprint_x = max(1, round(footprint_z * w / h))
 
     alpha = rgba_image.split()[3]
-    alpha_small = alpha.resize((footprint_x, footprint_z), Image.Resampling.LANCZOS)
-    mask_zx = np.array(alpha_small) > 128  # shape (footprint_z, footprint_x)
+    alpha_bin = Image.fromarray((np.array(alpha) > 128).astype(np.uint8) * 255)
+    alpha_small = alpha_bin.resize((footprint_x, footprint_z), Image.Resampling.LANCZOS)
+    mask_zx = np.array(alpha_small) > 32  # shape (footprint_z, footprint_x)
 
     voxels = np.zeros((footprint_x, height_studs, footprint_z), dtype=bool)
     for y in range(height_studs):
-        voxels[:, y, :] = mask_zx.T  # (footprint_z, footprint_x).T â†’ (footprint_x, footprint_z)
+        voxels[:, y, :] = mask_zx.T  # (footprint_z, footprint_x).T → (footprint_x, footprint_z)
     return voxels
 
 
@@ -190,7 +191,7 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
 
 
 def run(image_path: str, height_studs: int = 10) -> np.ndarray:
-    """Full image pipeline: rembg background removal â†’ silhouette extrusion â†’ voxel grid.
+    """Full image pipeline: rembg background removal → silhouette extrusion → voxel grid.
 
     Uses 2-D alpha-channel extrusion so cartoon/clip-art images produce the correct
     silhouette shape instead of the rectangular blob that TripoSR reconstructs from
