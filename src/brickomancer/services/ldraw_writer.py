@@ -1,4 +1,4 @@
-"""LDraw writer — converts BrickPlacements to .ldr file format.
+"""LDraw writer â€” converts BrickPlacements to .ldr file format.
 
 Public API
 ----------
@@ -29,6 +29,10 @@ Step markers:
   renders each step as a separate page.  ``0 !LPUB INSERT BOM`` is placed
   after the final ``0 STEP`` so LPub3D sees it at a page boundary and
   renders a consolidated parts-inventory page.
+
+  ``0 !LPUB FADE STEPS ENABLED TRUE`` in the file header instructs LPub3D
+  to render previously placed bricks faded/greyed in each step diagram so
+  the current step's new bricks are visually distinct.
 """
 
 import os
@@ -57,13 +61,13 @@ def _to_ldu(bp: BrickPlacement) -> tuple[int, int, int]:
         # Correct Y = (y-1)*-24 - 8 = y*-24 + 16
         y = bp.y * -_LAYER_LDU + (_LAYER_LDU - _TILE_HEIGHT_LDU)
     else:
-        y = bp.y * -_LAYER_LDU  # negate: voxel y-up → LDraw y-down
+        y = bp.y * -_LAYER_LDU  # negate: voxel y-up â†’ LDraw y-down
     z = bp.z * _STUD_LDU
     return x, y, z
 
 
 def _brick_line(bp: BrickPlacement) -> str:
-    """Return the LDraw ``1 …`` line for a single brick."""
+    """Return the LDraw ``1 â€¦`` line for a single brick."""
     x, y, z = _to_ldu(bp)
     return f"1 {bp.color_id} {x} {y} {z} 1 0 0 0 1 0 0 0 1 {bp.part_id}.dat"
 
@@ -88,7 +92,7 @@ def sequence_steps(
         bricks_per_step: Max bricks per step within a single layer (default 8).
 
     Returns:
-        list[list[BrickPlacement]] — one sublist per build step.
+        list[list[BrickPlacement]] â€” one sublist per build step.
     """
     sorted_bricks = sorted(placements, key=lambda bp: (bp.y, bp.x, bp.z))
     steps: list[list[BrickPlacement]] = []
@@ -129,6 +133,8 @@ def write_ldr(
         f"0 Name: {filename}",
         "0 Author: Brickomancer",
         f"0 Tier: {tier_name}",
+        "",
+        "0 !LPUB FADE STEPS ENABLED TRUE",
         "",
         "0 !LPUB INSERT COVER PAGE",
         "",
