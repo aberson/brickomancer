@@ -99,6 +99,8 @@
 
 **Issue:** #36
 
+**Status:** DONE (2026-06-13)
+
 **Flags:** (none)
 
 **Files:** `src/brickomancer/services/suggestion_service.py`, `tests/test_suggestion_service.py`
