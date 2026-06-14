@@ -15,6 +15,8 @@
 
 **Issue:** #33
 
+**Status:** DONE (2026-06-13)
+
 **Flags:** (none)
 
 **Files:** `src/brickomancer/services/image_pipeline.py`, `tests/test_image_pipeline.py`
