@@ -54,7 +54,7 @@ _LPUB3D_LDVIEW_CANDIDATES: list[str] = [
     r"C:\Program Files\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe",
     r"C:\Program Files (x86)\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe",
 ]
-# LPub3D also ships its own LDraw parts library — pass it to standalone LDView.
+# LPub3D also ships its own LDraw parts library â€” pass it to standalone LDView.
 _LPUB3D_LDRAW_CANDIDATES: list[str] = [
     r"C:\Tools\LPub3D\ldraw",
     r"C:\Program Files\LPub3D\ldraw",
@@ -100,13 +100,13 @@ def run_ldview(ldr_path: str, output_png: str) -> None:
         ldr_path,
         f"-SaveSnapshot={output_png}",
         "-ExportFile=1",
-        "-SaveWidth=400",
-        "-SaveHeight=300",
+        "-SaveWidth=800",
+        "-SaveHeight=600",
         "-AutoCrop=1",
-        "-Latitude=30",
+        "-Latitude=45",
         "-Longitude=45",
     ]
-    # Always pass the LDraw library dir — even LPub3D's bundled LDView needs it
+    # Always pass the LDraw library dir â€” even LPub3D's bundled LDView needs it
     # when invoked as a standalone subprocess (it doesn't auto-detect its own parts dir).
     ldraw_dir = _find_ldraw_dir()
     if ldraw_dir:
