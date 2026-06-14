@@ -1,4 +1,4 @@
-"""Brick packer â€” greedy layer-by-layer LEGO brick placement algorithm.
+"""Brick packer — greedy layer-by-layer LEGO brick placement algorithm.
 
 Public API
 ----------
@@ -11,7 +11,7 @@ interlocking_check(placements, layer) -> list[BrickPlacement]
 
 connectivity_repair(placements) -> list[BrickPlacement]
     Find bricks at y>0 with no stud connection to layer y-1 and force-insert
-    1Ã—1 bricks to restore structural continuity.
+    1×1 bricks to restore structural continuity.
 """
 
 import numpy as np
@@ -29,7 +29,7 @@ def _footprint(bp: BrickPlacement) -> set[tuple[int, int]]:
 
 
 def _has_connection(bp: BrickPlacement, below_footprints: set[tuple[int, int]]) -> bool:
-    """Return True if bp shares â‰¥1 stud with any brick in the layer below."""
+    """Return True if bp shares ≥1 stud with any brick in the layer below."""
     return bool(_footprint(bp) & below_footprints)
 
 
@@ -85,7 +85,7 @@ def interlocking_check(placements: list[BrickPlacement], layer: int) -> list[Bri
     """Check and repair interlocking for bricks at a given layer.
 
     For each brick in *layer* that has no connection to *layer - 1*, remove it
-    and try to replace it with 1Ã—1 bricks that DO connect.  The primary packing
+    and try to replace it with 1×1 bricks that DO connect.  The primary packing
     loop already enforces connectivity, so this function is a safety net for
     edge cases.
 
@@ -111,7 +111,7 @@ def interlocking_check(placements: list[BrickPlacement], layer: int) -> list[Bri
         if _has_connection(bp, below_footprints):
             result.append(bp)
         else:
-            # Replace disconnected brick with connected 1Ã—1 bricks
+            # Replace disconnected brick with connected 1×1 bricks
             for sx, sz in _footprint(bp):
                 if (sx, sz) in below_footprints:
                     result.append(
@@ -129,10 +129,10 @@ def interlocking_check(placements: list[BrickPlacement], layer: int) -> list[Bri
 
 
 def connectivity_repair(placements: list[BrickPlacement]) -> list[BrickPlacement]:
-    """Find and repair floating bricks by inserting 1Ã—1 bridge pillars.
+    """Find and repair floating bricks by inserting 1×1 bridge pillars.
 
     Bricks at y>0 that share no stud with any brick in layer y-1 are
-    force-connected by inserting a 1Ã—1 at the nearest stud in the layer below.
+    force-connected by inserting a 1×1 at the nearest stud in the layer below.
 
     Args:
         placements: List of BrickPlacement objects.
@@ -197,7 +197,7 @@ def pack(
 
     Greedy layer-by-layer placement with:
     - Masonry offset (odd layers shifted +1 in X)
-    - Connectivity enforcement: each brick at y>0 must share â‰¥1 stud with the
+    - Connectivity enforcement: each brick at y>0 must share ≥1 stud with the
       layer below; if no brick type achieves this, fall through and rely on
       connectivity_repair.
     - Connectivity repair pass after all layers are placed.
@@ -248,49 +248,59 @@ def pack(
                         orientations.append((ln, w))
 
                     for bw, bl in orientations:
-                        start_x = x
+                        # On odd layers try a half-brick-offset start first so
+                        # joints don't align with the layer below (true masonry).
+                        if y % 2 == 1 and bw > 1:
+                            half = bw // 2
+                            starts = [s for s in [x - half, x] if s >= 0]
+                        else:
+                            starts = [x]
 
-                        # Check bounds
-                        if start_x + bw > X or z + bl > Z:
-                            continue
+                        for start_x in starts:
+                            # Check bounds
+                            if start_x + bw > X or z + bl > Z:
+                                continue
 
-                        # Check that all stud positions are occupied in the voxel grid
-                        region = grid[start_x : start_x + bw, y, z : z + bl]
-                        if not region.all():
-                            continue
+                            # Check that all stud positions are occupied in the voxel grid
+                            region = grid[start_x : start_x + bw, y, z : z + bl]
+                            if not region.all():
+                                continue
 
-                        # Check none already covered
-                        cov_region = covered[start_x : start_x + bw, z : z + bl]
-                        if cov_region.any():
-                            continue
+                            # Check none already covered
+                            cov_region = covered[start_x : start_x + bw, z : z + bl]
+                            if cov_region.any():
+                                continue
 
-                        # Build candidate brick
-                        candidate = BrickPlacement(
-                            part_id=BRICK_PART_IDS[(bw, bl)],
-                            color_id=color_id,
-                            x=start_x,
-                            y=y,
-                            z=z,
-                            width=bw,
-                            length=bl,
-                        )
+                            # Build candidate brick
+                            candidate = BrickPlacement(
+                                part_id=BRICK_PART_IDS[(bw, bl)],
+                                color_id=color_id,
+                                x=start_x,
+                                y=y,
+                                z=z,
+                                width=bw,
+                                length=bl,
+                            )
 
-                        # Connectivity check for layers above ground
-                        if y > 0 and below_fps:
-                            if not _has_connection(candidate, below_fps):
-                                continue  # try smaller brick
+                            # Connectivity check for layers above ground
+                            if y > 0 and below_fps:
+                                if not _has_connection(candidate, below_fps):
+                                    continue  # try next start or smaller brick
 
-                        # Accept
-                        placements.append(candidate)
-                        covered[start_x : start_x + bw, z : z + bl] = True
-                        placed = True
-                        break  # break orientations loop
+                            # Accept
+                            placements.append(candidate)
+                            covered[start_x : start_x + bw, z : z + bl] = True
+                            placed = True
+                            break  # break start_x loop
+
+                        if placed:
+                            break  # break orientations loop
 
                     if placed:
                         break  # break brick_set loop
 
                 if not placed:
-                    # Fall through: single 1Ã—1 without connectivity guarantee
+                    # Fall through: single 1×1 without connectivity guarantee
                     # (connectivity_repair will fix these)
                     candidate_1x1 = BrickPlacement(
                         part_id=BRICK_PART_IDS[(1, 1)],
