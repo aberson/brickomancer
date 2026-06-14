@@ -7,11 +7,14 @@ helpful message when either dependency is absent.
 """
 
 import io
+import logging
 from pathlib import Path
 
 import numpy as np
 import trimesh
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Optional rembg import — guarded because rembg calls sys.exit(1) when
@@ -179,6 +182,16 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
     alpha_small = alpha_bin.resize((footprint_x, footprint_z), Image.Resampling.LANCZOS)
     mask_zx = np.array(alpha_small) > 32  # shape (footprint_z, footprint_x)
 
+    logger.info(
+        "silhouette fill: %.1f%% (%d/%d studs)",
+        mask_zx.mean() * 100,
+        int(mask_zx.sum()),
+        mask_zx.size,
+    )
+    if mask_zx.sum() < 4:
+        logger.warning("sparse rembg output — using solid fill fallback")
+        mask_zx[:] = True
+
     voxels = np.zeros((footprint_x, height_studs, footprint_z), dtype=bool)
     for y in range(height_studs):
         voxels[:, y, :] = mask_zx.T  # (footprint_z, footprint_x).T → (footprint_x, footprint_z)
@@ -208,4 +221,6 @@ def run(image_path: str, height_studs: int = 10) -> np.ndarray:
         ImportError: If rembg is not installed.
     """
     pil_image = _remove_background(image_path)
+    alpha_arr = np.array(pil_image.split()[3])
+    logger.info("rembg alpha fill: %.1f%%", alpha_arr.mean() / 255 * 100)
     return _extrude_silhouette(pil_image, height_studs)

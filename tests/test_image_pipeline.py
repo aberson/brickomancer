@@ -196,6 +196,28 @@ def test_extrude_silhouette_rgb_input_treated_as_opaque() -> None:
     assert result.all(), "All voxels should be filled for a fully opaque input"
 
 
+def test_extrude_silhouette_sparse_falls_back_to_solid() -> None:
+    """Near-empty alpha triggers solid-fill fallback; axis convention preserved."""
+    from PIL import Image
+
+    # 20x20 image with only 1 opaque pixel — mask_zx.sum() will be < 4
+    rgba = Image.new("RGBA", (20, 20), color=(0, 0, 0, 0))
+    rgba.putpixel((10, 10), (255, 0, 0, 255))
+
+    height_studs = 5
+    result = ip._extrude_silhouette(rgba, height_studs=height_studs)
+
+    # Axis convention: shape is (X, Y, Z) with Y == height_studs
+    assert result.shape[1] == height_studs, (
+        f"Y axis (shape[1]) must equal height_studs={height_studs}, got {result.shape}"
+    )
+
+    # Fallback solid fill must cover at least height_studs layers × 4 voxels each
+    assert result.sum() >= 4 * height_studs, (
+        f"Expected >= {4 * height_studs} filled voxels from solid fallback, got {result.sum()}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Unit tests — run()
 # ---------------------------------------------------------------------------
