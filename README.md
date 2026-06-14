@@ -12,8 +12,8 @@ Local-first personal tool. Python/FastAPI backend + React frontend. Clean REST A
 |---|---|
 | Backend | Python 3.12, FastAPI, uv |
 | Frontend | React 18 + Vite (port 5173) |
-| Image → 3D mesh | TripoSR (MIT, Stability AI) + rembg |
-| Voxelization | trimesh |
+| Image → voxels | rembg (background removal) + 2D silhouette extrusion |
+| Voxelization | trimesh (text path) |
 | Text → shape | Llama 3.2-1B via llama-server (llama.cpp, port 8080) |
 | Piece detection | Claude claude-sonnet-4-6 via `CLAUDE_CODE_OAUTH_TOKEN` subprocess |
 | Color matching | scikit-learn + scikit-image + basic-colormath (ΔE2000) |
@@ -25,8 +25,7 @@ Local-first personal tool. Python/FastAPI backend + React frontend. Clean REST A
 ## Prerequisites
 
 - Python 3.12+, uv, Node.js 20+
-- CUDA GPU with 6 GB+ VRAM (for TripoSR)
-- `llama-server` running with Llama 3.2-1B GGUF on port 8080
+- `llama-server` running with Llama 3.2-1B GGUF on port 8080 (text path only)
 - `LDView` on PATH (`LDView --version` or `ldview --version` works)
 - `LPub3D` on PATH (`lpub3d -?` works)
 - `CLAUDE_CODE_OAUTH_TOKEN` set in `.env` (copy from `.env.example`)
@@ -70,7 +69,7 @@ npm run build --prefix frontend
 ```
 Photo/text input
   ↓
-Image path: rembg → TripoSR → trimesh voxelization
+Image path: rembg (background removal) → 2D silhouette extrusion → voxel grid
 Text path:  llama-server → primitive mesh → trimesh voxelization
   ↓
 Brick packing (greedy + masonry offset + interlocking check)
@@ -88,7 +87,7 @@ User selects suggestion → LPub3D generates instruction PDF
 - **LDraw + LPub3D for instructions.** LPub3D headless produces publication-quality step illustrations; replicating this with ReportLab would take weeks.
 - **CLAUDE_CODE_OAUTH_TOKEN subprocess for piece detection.** No API key billing on the existing subscription. The detector is behind `subprocess_utils.run_claude_subprocess()`; swapping to a local LLaVA model requires changing one function.
 - **Greedy packing with masonry offset.** Tractable in milliseconds for up to ~5000 bricks. OR-Tools CP-SAT per-layer ILP is the V2 upgrade path.
-- **TripoSR over monocular depth.** Generates a closed watertight mesh including back geometry — required for solid voxelization. Monocular depth gives only a 2.5D front-surface shell.
+- **2D silhouette extrusion over TripoSR.** rembg alpha-channel mask → stud-grid resize → vertical extrusion gives the correct subject silhouette shape for cartoon/clip-art inputs. TripoSR reconstructed these as rectangular blobs regardless of subject shape.
 
 ## Project structure
 
@@ -117,4 +116,4 @@ scripts/
 
 ## Status
 
-**Harness calibration + run 2** — Fixed `height_studs` to 5 (matching gold ~5-high star); server now restarts after each committed iteration so code changes take effect within the same run (not deferred to the next). Run 2 landed 3 commits: voxel axis transpose so star face aligns to the XZ brick-layer plane, tile Y-coordinate fix so surface tiles sit flush, and subject-color filter so yellow star drives color extraction instead of white background. 311 tests passing, 0 type errors, 0 lint violations.
+**Harness run 3 in progress** — Replaced TripoSR with 2D alpha-channel silhouette extrusion (`image_pipeline._extrude_silhouette`): rembg alpha mask → stud-grid resize → vertical extrusion. Produces star-shaped voxel grid instead of rectangular blob. Run 2 previously landed: voxel axis transpose, tile Y-coordinate fix, subject-color filter (yellow star). 313 tests passing, 0 type errors, 0 lint violations.

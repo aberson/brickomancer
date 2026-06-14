@@ -669,6 +669,40 @@ Because the server doesn't hot-reload Python modules, all iterations in a run ev
 | Issue | Detail |
 |---|---|
 | Token not inherited by Bash | Always launch harness from PowerShell with explicit `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN","User")` before starting |
-| Server restart cost | TripoSR reloads model (~30–60s) on each server start; one restart per committed iteration is the unavoidable cost of hot-reloading |
+| Server restart cost | Server restarts after each PASS_COMMITTED; 2D extrusion is fast (no GPU model load) so restarts are quick now |
 | `test_extract_colors_cake_dominant_colors` blocker | Any change that filters white from color_service must also update this test. Dev agent needs explicit instruction to update the test alongside the fix |
+
+---
+
+## Session notes — 2026-06-14
+
+### Run 3 results (5 iterations, star gold dataset)
+
+1 commit landed, 2 SKIPPED_REVERT, 1 SKIPPED_TIMEOUT, 1 SKIPPED_REVERT.
+
+| Iter | Commit | Dimension | Result | Change |
+|---|---|---|---|---|
+| 1 | — | shape_fidelity | SKIPPED_REVERT | `_apply_silhouette_mask()` — tests in test_image_pipeline.py expected TripoSR path; reverted |
+| 2 | — | shape_fidelity | SKIPPED_TIMEOUT | Developer agent timed out on shape_fidelity change |
+| 3 | ea0f2d0 | build_stability | PASS_COMMITTED | Masonry offset on odd layers: `x - bw//2` starting position before fallback to `x` |
+| 4 | — | shape_fidelity | SKIPPED_REVERT | Full 2D extrusion bypass of TripoSR — 4 tests failed (test suite locked to TripoSR contract) |
+| 5 | — | pdf_completeness | SKIPPED_REVERT | `0 STEP` after every batch including last — `test_no_trailing_step_marker` blocked it |
+
+### Post-run 3 fix: replaced TripoSR with 2D silhouette extrusion
+
+After run 3 confirmed the developer kept trying (and failing) to bypass TripoSR, the tests were manually updated and the feature was landed:
+
+- **`image_pipeline._extrude_silhouette(rgba_image, height_studs)`**: extracts rembg alpha channel, resizes to `(height_studs × height_studs)` stud footprint, extrudes uniformly to produce `(X, height_studs, Z)` bool array. Produces star-shaped voxel grid instead of TripoSR rectangular blob.
+- **`image_pipeline.run()`**: now calls `_remove_background()` → `_extrude_silhouette()` only. TripoSR functions remain in module for reference but are not called.
+- **`test_image_pipeline.py`**: removed TripoSR-specific tests (`mock_triposr` fixture, `test_run_raises_import_error_when_triposr_unavailable`, `test_run_raises_value_error_when_trimesh_load_returns_scene`); added `test_extrude_silhouette_*` tests; updated `run()` tests to use RGBA mocks. Net: 311 → 313 passing.
+
+Commit: `96ffeb8`
+
+### Files changed (run 3 + post-run fix)
+
+| File | Change |
+|---|---|
+| `src/brickomancer/services/brick_packer.py` | Masonry offset on odd layers (ea0f2d0) |
+| `src/brickomancer/services/image_pipeline.py` | Add `_extrude_silhouette()`; `run()` now uses rembg → silhouette extrusion; removed TripoSR call; removed `import tempfile` (96ffeb8) |
+| `tests/test_image_pipeline.py` | Remove TripoSR-specific tests; add `_extrude_silhouette` unit tests; update `run()` tests to RGBA mocks (96ffeb8) |
 | Run 2 scores low overall | avg_raw ~2.5–3.1 across 8 dims; shape_fidelity and reference_fidelity stuck at 1. Root cause: TripoSR reconstructs flat cartoon star as a blob, not a 5-pointed shape. Axis transpose helps orientation but not reconstruction quality. Scores will improve as run 2 commits are evaluated in future runs. |
