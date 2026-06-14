@@ -94,7 +94,7 @@ Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build 
 
 **`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as Windows user environment variable (not `.env` file). Inherited by the desktop `.bat` launcher automatically. When running from PowerShell/Bash tools, load it explicitly: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`. The Bash tool does NOT inherit Windows user env vars — always launch harness from PowerShell.
 
-**pytest note:** `uv run pytest -q` alone will fail if a server is running on port 8000 (integration smoke tests hit it). Use `uv run pytest -q --ignore=tests/integration` for the clean gate. The harness always uses `--ignore=tests/integration`.
+**pytest note:** `uv run pytest -q` alone will fail if a server is running on port 8000 (integration smoke tests hit it). Use `uv run pytest -q --ignore=tests/integration` for the clean gate. The harness always uses `--ignore=tests/integration`. Integration gate (shape-fidelity star test): `BRICKOMANCER_INTEGRATION=1 uv run pytest tests/integration/ -v`.
 
 **Next action:** Run `/run-harness` (or double-click `scripts/run_harness.bat`) for overnight hill-climbing.
 
