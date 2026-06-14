@@ -1,4 +1,4 @@
-"""LDraw writer â€” converts BrickPlacements to .ldr file format.
+"""LDraw writer — converts BrickPlacements to .ldr file format.
 
 Public API
 ----------
@@ -28,7 +28,8 @@ Step markers:
   ``0 STEP`` is inserted after every step including the last, so LPub3D
   renders each step as a separate page.  ``0 !LPUB INSERT BOM`` is placed
   after the final ``0 STEP`` so LPub3D sees it at a page boundary and
-  renders a consolidated parts-inventory page.
+  renders a consolidated parts-inventory page.  ``0 !LPUB INSERT MODEL``
+  follows the BOM to add a dedicated completed-model showcase page.
 
   ``0 !LPUB FADE STEPS ENABLED TRUE`` in the file header instructs LPub3D
   to render previously placed bricks faded/greyed in each step diagram so
@@ -117,7 +118,9 @@ def write_ldr(
     A ``0 STEP`` marker is inserted after every step, including the last,
     so LPub3D renders each step as a separate page.  A ``0 !LPUB INSERT BOM``
     meta command is appended after the final ``0 STEP`` so LPub3D sees it at
-    a page boundary and renders a consolidated parts-inventory page.
+    a page boundary and renders a consolidated parts-inventory page.  A
+    ``0 !LPUB INSERT MODEL`` meta command follows to add a dedicated
+    completed-model showcase page as the final page of the PDF.
 
     Args:
         placements: list[BrickPlacement] to write.
@@ -148,7 +151,7 @@ def write_ldr(
             lines.append(_brick_line(bp))
         lines.append("0 STEP")
 
-    lines.extend(["", "0 !LPUB INSERT BOM"])
+    lines.extend(["", "0 !LPUB INSERT BOM", "", "0 !LPUB INSERT MODEL"])
 
     parent = os.path.dirname(os.path.abspath(output_path))
     if parent:
