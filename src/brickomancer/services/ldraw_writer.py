@@ -1,4 +1,4 @@
-"""LDraw writer — converts BrickPlacements to .ldr file format.
+"""LDraw writer â€” converts BrickPlacements to .ldr file format.
 
 Public API
 ----------
@@ -36,6 +36,12 @@ Step markers:
   the current step's new bricks are visually distinct.  ``0 !LPUB FADE STEPS
   SETUP OPACITY 50`` sets the fade level to 50% so previously placed bricks
   are clearly lighter than the current step's new bricks.
+
+  ``0 !LPUB HIGHLIGHT STEP`` instructs LPub3D to draw a colored border
+  around newly added bricks in each step.  ``0 !LPUB HIGHLIGHT STEP SETUP
+  COLOR 255`` sets the highlight color to blue (RGB 0x0000FF), which
+  contrasts clearly against yellow bricks so builders can immediately
+  identify which pieces to place in the current step.
 """
 
 import os
@@ -64,13 +70,13 @@ def _to_ldu(bp: BrickPlacement) -> tuple[int, int, int]:
         # Correct Y = (y-1)*-24 - 8 = y*-24 + 16
         y = bp.y * -_LAYER_LDU + (_LAYER_LDU - _TILE_HEIGHT_LDU)
     else:
-        y = bp.y * -_LAYER_LDU  # negate: voxel y-up → LDraw y-down
+        y = bp.y * -_LAYER_LDU  # negate: voxel y-up â†’ LDraw y-down
     z = bp.z * _STUD_LDU
     return x, y, z
 
 
 def _brick_line(bp: BrickPlacement) -> str:
-    """Return the LDraw ``1 …`` line for a single brick."""
+    """Return the LDraw ``1 â€¦`` line for a single brick."""
     x, y, z = _to_ldu(bp)
     return f"1 {bp.color_id} {x} {y} {z} 1 0 0 0 1 0 0 0 1 {bp.part_id}.dat"
 
@@ -95,7 +101,7 @@ def sequence_steps(
         bricks_per_step: Max bricks per step within a single layer (default 8).
 
     Returns:
-        list[list[BrickPlacement]] — one sublist per build step.
+        list[list[BrickPlacement]] â€” one sublist per build step.
     """
     sorted_bricks = sorted(placements, key=lambda bp: (bp.y, bp.x, bp.z))
     steps: list[list[BrickPlacement]] = []
@@ -141,6 +147,8 @@ def write_ldr(
         "",
         "0 !LPUB FADE STEPS ENABLED TRUE",
         "0 !LPUB FADE STEPS SETUP OPACITY 50",
+        "0 !LPUB HIGHLIGHT STEP",
+        "0 !LPUB HIGHLIGHT STEP SETUP COLOR 255",
         "",
         "0 !LPUB INSERT COVER_PAGE",
         "",
