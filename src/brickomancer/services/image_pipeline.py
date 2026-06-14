@@ -170,17 +170,34 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
     if rgba_image.mode != "RGBA":
         rgba_image = rgba_image.convert("RGBA")
     w, h = rgba_image.size
+
+    # Sample at high internal resolution so LANCZOS preserves thin star arms
     if w >= h:
-        footprint_x = max(height_studs, _MIN_FOOTPRINT_STUDS)
-        footprint_z = max(1, round(footprint_x * h / w))
+        hires_x = max(height_studs, _MIN_FOOTPRINT_STUDS)
+        hires_z = max(1, round(hires_x * h / w))
     else:
-        footprint_z = max(height_studs, _MIN_FOOTPRINT_STUDS)
-        footprint_x = max(1, round(footprint_z * w / h))
+        hires_z = max(height_studs, _MIN_FOOTPRINT_STUDS)
+        hires_x = max(1, round(hires_z * w / h))
 
     alpha = rgba_image.split()[3]
     alpha_bin = Image.fromarray((np.array(alpha) > 128).astype(np.uint8) * 255)
-    alpha_small = alpha_bin.resize((footprint_x, footprint_z), Image.Resampling.LANCZOS)
-    mask_zx = np.array(alpha_small) > 32  # shape (footprint_z, footprint_x)
+    alpha_hires = alpha_bin.resize((hires_x, hires_z), Image.Resampling.LANCZOS)
+    mask_hires = np.array(alpha_hires) > 32  # shape (hires_z, hires_x)
+
+    # OR-pool down to compact output footprint matching gold reference scale.
+    # OR-pooling preserves any filled pixel in each block so thin star arms
+    # survive the reduction even though the output is much smaller.
+    output_x = max(height_studs + 2, round(hires_x * height_studs / _MIN_FOOTPRINT_STUDS))
+    output_z = max(height_studs + 2, round(hires_z * height_studs / _MIN_FOOTPRINT_STUDS))
+
+    mask_zx = np.zeros((output_z, output_x), dtype=bool)
+    for ti in range(output_z):
+        si0 = (ti * hires_z) // output_z
+        si1 = max(si0 + 1, ((ti + 1) * hires_z) // output_z)
+        for tj in range(output_x):
+            sj0 = (tj * hires_x) // output_x
+            sj1 = max(sj0 + 1, ((tj + 1) * hires_x) // output_x)
+            mask_zx[ti, tj] = mask_hires[si0:si1, sj0:sj1].any()
 
     logger.info(
         "silhouette fill: %.1f%% (%d/%d studs)",
@@ -192,9 +209,9 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
         logger.warning("sparse rembg output — using solid fill fallback")
         mask_zx[:] = True
 
-    voxels = np.zeros((footprint_x, height_studs, footprint_z), dtype=bool)
+    voxels = np.zeros((output_x, height_studs, output_z), dtype=bool)
     for y in range(height_studs):
-        voxels[:, y, :] = mask_zx.T  # (footprint_z, footprint_x).T → (footprint_x, footprint_z)
+        voxels[:, y, :] = mask_zx.T  # (output_z, output_x).T → (output_x, output_z)
     return voxels
 
 
