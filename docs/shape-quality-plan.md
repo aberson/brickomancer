@@ -138,6 +138,8 @@
 
 **Issue:** #37
 
+**Status:** DONE (2026-06-13)
+
 **Flags:** (none)
 
 **Files:** `tests/integration/test_star_pipeline.py`, `CLAUDE.md`
