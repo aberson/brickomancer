@@ -1,4 +1,4 @@
-"""LDraw writer — converts BrickPlacements to .ldr file format.
+"""LDraw writer â€” converts BrickPlacements to .ldr file format.
 
 Public API
 ----------
@@ -6,7 +6,8 @@ write_ldr(placements, output_path, tier_name) -> str
     Write a sorted, step-sequenced LDraw .ldr file.
 
 sequence_steps(placements, bricks_per_step) -> list[list[BrickPlacement]]
-    Group placements into build steps (Y-sorted, batches of bricks_per_step).
+    Group placements into build steps (one step per Y-layer, batched by
+    bricks_per_step within each layer).
 
 LDraw coordinate system
 -----------------------
@@ -24,10 +25,11 @@ Line format:
   1 <color_id> <x> <y> <z> 1 0 0 0 1 0 0 0 1 <part_file>.dat
 
 Step markers:
-  ``0 STEP`` is inserted after every 8th brick (not at the very end).
+  ``0 STEP`` is inserted after each Y-layer group (not at the very end).
 """
 
 import os
+from itertools import groupby
 
 from brickomancer.models.brick import BrickPlacement, TILE_PART_IDS
 
@@ -52,13 +54,13 @@ def _to_ldu(bp: BrickPlacement) -> tuple[int, int, int]:
         # Correct Y = (y-1)*-24 - 8 = y*-24 + 16
         y = bp.y * -_LAYER_LDU + (_LAYER_LDU - _TILE_HEIGHT_LDU)
     else:
-        y = bp.y * -_LAYER_LDU  # negate: voxel y-up → LDraw y-down
+        y = bp.y * -_LAYER_LDU  # negate: voxel y-up â†’ LDraw y-down
     z = bp.z * _STUD_LDU
     return x, y, z
 
 
 def _brick_line(bp: BrickPlacement) -> str:
-    """Return the LDraw ``1 …`` line for a single brick."""
+    """Return the LDraw ``1 â€¦`` line for a single brick."""
     x, y, z = _to_ldu(bp)
     return f"1 {bp.color_id} {x} {y} {z} 1 0 0 0 1 0 0 0 1 {bp.part_id}.dat"
 
@@ -72,19 +74,25 @@ def sequence_steps(
     placements: list[BrickPlacement],
     bricks_per_step: int = 8,
 ) -> list[list[BrickPlacement]]:
-    """Group BrickPlacements into build steps (Y-sorted, batches of bricks_per_step).
+    """Group BrickPlacements into build steps by Y-layer, then by bricks_per_step.
+
+    Each distinct voxel Y-layer becomes at least one build step, preserving
+    the vertical stacking sequence.  Large layers are split into sub-steps of
+    bricks_per_step bricks each.
 
     Args:
         placements: list[BrickPlacement] to sequence.
-        bricks_per_step: Number of bricks per step group (default 8).
+        bricks_per_step: Max bricks per step within a single layer (default 8).
 
     Returns:
-        list[list[BrickPlacement]] — one sublist per build step.
+        list[list[BrickPlacement]] â€” one sublist per build step.
     """
     sorted_bricks = sorted(placements, key=lambda bp: (bp.y, bp.x, bp.z))
     steps: list[list[BrickPlacement]] = []
-    for i in range(0, len(sorted_bricks), bricks_per_step):
-        steps.append(sorted_bricks[i : i + bricks_per_step])
+    for _, layer_iter in groupby(sorted_bricks, key=lambda bp: bp.y):
+        layer_bricks = list(layer_iter)
+        for i in range(0, len(layer_bricks), bricks_per_step):
+            steps.append(layer_bricks[i : i + bricks_per_step])
     return steps
 
 
@@ -95,8 +103,9 @@ def write_ldr(
 ) -> str:
     """Write a list of BrickPlacements to an LDraw .ldr file.
 
-    Bricks are sorted by Y (ascending voxel layer), then batched into groups
-    of 8.  A ``0 STEP`` marker is inserted after each batch *except* the last.
+    Bricks are grouped by Y-layer (ascending voxel layer) so each layer
+    is a distinct build step.  Large layers are split into sub-steps of 8.
+    A ``0 STEP`` marker is inserted after each step *except* the last.
 
     Args:
         placements: list[BrickPlacement] to write.
@@ -120,7 +129,7 @@ def write_ldr(
     for step_idx, step_bricks in enumerate(steps):
         for bp in step_bricks:
             lines.append(_brick_line(bp))
-        # Insert 0 STEP after every batch except the very last
+        # Insert 0 STEP after every step except the very last
         if step_idx < len(steps) - 1:
             lines.append("0 STEP")
 
