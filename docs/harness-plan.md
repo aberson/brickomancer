@@ -749,3 +749,60 @@ Two issues observed across run 3 and run 4 were fixed manually and committed as 
 | Developer timeout | Now 600s — timeouts should be rare; if still hitting them, check advisor prompt complexity for that dimension |
 | Recurring pdf_completeness target | Dev agent keeps adding LPub3D meta-commands (cover page, BOM); these may now pass tests since trailing STEP is allowed |
 | Run 2 scores low overall | avg_raw ~2.5–3.1 across 8 dims; shape_fidelity and reference_fidelity stuck at 1. Root cause: TripoSR reconstructs flat cartoon star as a blob, not a 5-pointed shape. Axis transpose helps orientation but not reconstruction quality. Scores will improve as run 2 commits are evaluated in future runs. |
+
+---
+
+## Harness run 5 (2026-06-14)
+
+**Summary:** 5 iterations, avg raw 3.4 → 4.0 at close. Runs 3 and 5 SKIPPED_REVERT — developer agent proposed axis changes (Y→Z) which 3 correct tests blocked. Root causes identified in INV-7: (1) rembg server-side ~3 True voxels/layer vs 117 locally; (2) stride-2 downsample loses star arms on odd indices; (3) no integration test for degenerate output.
+
+| Iter | SHA | Dimension | Result | Notes |
+|---|---|---|---|---|
+| 1 | 0818782 | build_stability | PASS_COMMITTED | Minimum 2×2 stud footprint padding before packing |
+| 2 | 8fb28aa | shape_fidelity | PASS_COMMITTED | Pre-binarize alpha at full resolution before downsampling |
+| 3 | — | shape_fidelity | SKIPPED_REVERT | Axis change (Y→Z extrusion) blocked by 3 tests |
+| 4 | bdb2d7e | shape_fidelity | PASS_COMMITTED | α-threshold 128→32 to include attenuated star tips |
+| 5 | — | reference_fidelity | SKIPPED_REVERT | Axis change blocked again |
+
+### Post-run 5 shape-quality plan (#32, 2026-06-13/14)
+
+Root-cause fixes landed as a `/build-phase` run on `docs/shape-quality-plan.md` (Steps 1, 4, 5, 6; Steps 2/3 deferred/conditional):
+
+| Step | SHA | What |
+|---|---|---|
+| Pre-flight | b1aae9b | ruff I001 fix in ldraw_writer.py imports |
+| Step 1 | (merged) | Sparse-fill guard + rembg diagnostic logging in image_pipeline.py; new test `test_extrude_silhouette_sparse_falls_back_to_solid` (315 tests) |
+| Step 4 | (merged) | 2×2 OR-pool downsample in suggestion_service._downsample; new test `test_compact_downsample_preserves_star_shape` |
+| Step 5 | (merged) | Integration test `tests/integration/test_star_pipeline.py` (gated on BRICKOMANCER_INTEGRATION=1) |
+| Step 6 | (merged) | Axis-convention guard appended to developer-agent prompt in run_harness.py |
+
+Step 2 (operator M1 — diagnose rembg fill% on live server) deferred. Step 3 (birefnet-general model switch) conditional on SPARSE verdict in `docs/investigations/INV-7-step2-verdict`.
+
+---
+
+## Harness run 6 (2026-06-14)
+
+**Summary:** 5 iterations, avg raw 4.0 → 4.75. 4 committed, 1 SKIPPED_REVERT. No axis-change attempts (axis-convention guard worked). Developer agent targeted LDraw meta-commands and brick_packer orientation logic.
+
+| Iter | SHA | Dimension | Result | Notes |
+|---|---|---|---|---|
+| 1 | d4405b0 | pdf_completeness | PASS_COMMITTED | Added `0 !LPUB INSERT BOM` meta command (BOM page) |
+| 2 | 6d6f8a2 | pdf_completeness | PASS_COMMITTED | Moved BOM command after final `0 STEP` (valid page boundary) |
+| 3 | 15b8f0a | instruction_clarity | PASS_COMMITTED | Added `0 !LPUB FADE STEPS ENABLED` header (previously-placed bricks faded) |
+| 4 | — | instruction_clarity | SKIPPED_REVERT | ROTSTEP+STEP hero-angle final page broke 3 step-marker tests |
+| 5 | 7d202dc | build_stability | PASS_COMMITTED | Alternating brick orientation on odd layers (cross-bond interlocking) |
+
+### Files changed (run 6)
+
+| File | Change |
+|---|---|
+| `src/brickomancer/services/ldraw_writer.py` | BOM insert + position fix + FADE STEPS header (d4405b0, 6d6f8a2, 15b8f0a) |
+| `src/brickomancer/services/brick_packer.py` | Alternating orientation on odd layers (7d202dc) |
+
+### Fresh context notes for run 6
+
+| Issue | Detail |
+|---|---|
+| ROTSTEP hero-page blocked | Appending ROTSTEP+STEP after build steps breaks `test_step_markers_every_8`, `test_trailing_step_marker_present`, `test_step_marker_after_exactly_8`. These tests are intentional — update them if pursuing hero page. |
+| shape_fidelity still at 3 | Root cause is rembg sparsity (M1 UAT pending). Sparse-fill guard prevents 1×1 column but doesn't fix the star shape. birefnet-general model (Step 3) would help most. |
+| build_stability at 2 | Cross-bond fix (7d202dc) didn't move the score. Advisors may want true masonry interlocking across layers, not just within-layer alternation. |
