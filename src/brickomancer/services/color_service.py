@@ -1,19 +1,19 @@
-"""Color service â€” KMeans color extraction and Î”E2000 LEGO color matching.
+"""Color service – KMeans color extraction and ΔE2000 LEGO color matching.
 
 Two public functions:
   extract_colors(image_path) -> list[ColorMatch]
-      Runs KMeans (k=8) in Lab color space on the image pixels, then maps
-      each cluster centroid to the nearest LEGO color via Î”E2000.
+      Runs KMeans (k=12) in Lab color space on the image pixels, then maps
+      each cluster centroid to the nearest LEGO color via ΔE2000.
 
   match_color(rgb_hex) -> ColorMatch
-      Maps a single hex string to the nearest LEGO color via Î”E2000.
+      Maps a single hex string to the nearest LEGO color via ΔE2000.
 
 Dependencies
 ------------
-- basic-colormath  â†’  `basic_colormath` (get_delta_e_lab)
-- scikit-image     â†’  `skimage.color.rgb2lab`  (KMeans Lab conversion + palette conversion)
-- Pillow           â†’  image loading
-- scikit-learn     â†’  KMeans
+- basic-colormath  →  `basic_colormath` (get_delta_e_lab)
+- scikit-image     →  `skimage.color.rgb2lab`  (KMeans Lab conversion + palette conversion)
+- Pillow           →  image loading
+- scikit-learn     →  KMeans
 - numpy
 """
 
@@ -30,7 +30,7 @@ from brickomancer.services.data_service import list_colors
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-_K_CLUSTERS = 8  # Number of KMeans clusters
+_K_CLUSTERS = 12  # Number of KMeans clusters
 
 _LAB = tuple[float, float, float]
 
@@ -71,7 +71,7 @@ def _rgb255_to_lab(r: float, g: float, b: float) -> _LAB:
 
 
 def _nearest_lego_color(lab: _LAB) -> tuple[int, str, str]:
-    """Find the nearest LEGO color by Î”E2000.
+    """Find the nearest LEGO color by ΔE2000.
 
     Args:
         lab: Lab color tuple (L, a, b) as produced by skimage.color.rgb2lab.
@@ -151,7 +151,7 @@ def extract_colors(image_path: str) -> list[ColorMatch]:
 
 
 def match_color(rgb_hex: str) -> ColorMatch:
-    """Find the nearest LEGO color for a given RGB hex string using Î”E2000.
+    """Find the nearest LEGO color for a given RGB hex string using ΔE2000.
 
     Args:
         rgb_hex: 6-character hex string (with or without leading '#'),
