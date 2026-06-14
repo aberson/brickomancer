@@ -79,7 +79,7 @@ brickomancer/
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes + six harness runs (2026-06-13/14). Harness fully operational: 8/8 advisors (color_match replaces part_variety; reference_fidelity added using gold dataset star), weighted developer-agent loop, pytest gate (unit tests only), avg-raw quality gate (≥ 8.0). Top-surface bricks tile-smoothed via `_apply_surface_tiles()` (TILE_PART_IDS in brick.py). Desktop launcher at `scripts/run_harness.bat`. `/run-harness` skill for one-command prep + launch + monitoring. 315 unit tests passing, 0 type errors, 0 lint violations. Gold dataset: `docs/example_input_output/star/` (cartoon_star.jpg + cartoon_star2.png inputs + 10 gold step PNGs); harness uses `_HEIGHT_STUDS = 5` (matches gold reference ~5-high star). Server restarts after each PASS_COMMITTED so code changes take effect within the same run.
+Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes + seven harness runs (2026-06-13/14). Harness fully operational: 8/8 advisors (color_match replaces part_variety; reference_fidelity added using gold dataset star), weighted developer-agent loop, pytest gate (unit tests only), avg-raw quality gate (≥ 8.0). Top-surface bricks tile-smoothed via `_apply_surface_tiles()` (TILE_PART_IDS in brick.py). Desktop launcher at `scripts/run_harness.bat`. `/run-harness` skill for one-command prep + launch + monitoring. 315 unit tests passing, 0 type errors, 0 lint violations. Gold dataset: `docs/example_input_output/star/` (cartoon_star.jpg + cartoon_star2.png inputs + 10 gold step PNGs); harness uses `_HEIGHT_STUDS = 5` (matches gold reference ~5-high star). Server restarts after each PASS_COMMITTED so code changes take effect within the same run. Harness output is flat: all per-iteration files (PDF, preview, advisor_reports) written to `tests/harness/runs/` with prefix `i{n}_{HHmm}_`.
 
 **Committed improvements to date:**
 - 8bd95b3: axis transpose (star face → XZ plane)
@@ -94,6 +94,9 @@ Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build 
 - 6d6f8a2: BOM position fix (command placed after final `0 STEP` at valid page boundary)
 - 15b8f0a: `!LPUB FADE STEPS ENABLED` header (previously-placed bricks faded/greyed per step)
 - 7d202dc: brick_packer alternating orientation on odd layers (cross-bond interlocking)
+- 2c05feb: tile decomposition — non-standard brick sizes (e.g. 2×3) split into 1-wide tile strips for uniform top-surface height
+- 90efe32: removed malformed `!LPUB FADE STEPS ENABLED` header (was missing TRUE/FALSE arg, caused LPub3D to blank every page)
+- 0533e5e: LDView camera latitude 30°→45°, resolution 800×600 (sharper preview, top footprint visible)
 
 **Harness image-passing note:** `claude -p` does not support `--image`. Images (preview PNG, input image) are passed as absolute paths in the prompt with "Use your Read tool to view this image." Same pattern used by PDF advisors. LDR content truncated to 400 lines before embedding. Advisor timeout 240s, developer timeout 600s.
 
@@ -101,7 +104,7 @@ Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build 
 
 **pytest note:** `uv run pytest -q` alone will fail if a server is running on port 8000 (integration smoke tests hit it). Use `uv run pytest -q --ignore=tests/integration` for the clean gate. The harness always uses `--ignore=tests/integration`. Integration gate (shape-fidelity star test): `BRICKOMANCER_INTEGRATION=1 uv run pytest tests/integration/ -v`.
 
-**Next action:** Run `/run-harness` (or double-click `scripts/run_harness.bat`) for overnight hill-climbing. build_stability (2) and shape_fidelity (3) remain the lowest scorers. Shape_fidelity root cause is rembg sparsity — run M1 UAT (start server, POST cartoon_star2.png, check silhouette fill % log) and write verdict to `docs/investigations/INV-7-step2-verdict`; if SPARSE, re-run `/build-phase docs/shape-quality-plan.md --resume 3` to switch to birefnet-general model.
+**Next action:** Run `/run-harness --iterations 20` for overnight hill-climbing. build_stability (2) and shape_fidelity (3) remain the lowest scorers. pdf_completeness and instruction_clarity are still near-zero even after removing the malformed FADE header — further investigation needed. Harness output is now flat (no `iteration_N/` subdirs). Shape_fidelity root cause is rembg sparsity — M1 UAT (INV-7) still pending.
 
 ## Environment requirements
 

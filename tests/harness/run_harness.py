@@ -120,7 +120,7 @@ log = logging.getLogger("harness")
 
 
 def pipeline_executor(
-    iteration_dir: Path, input_image_path: Path, height_studs: int
+    runs_dir: Path, file_prefix: str, input_image_path: Path, height_studs: int
 ) -> dict[str, Any]:
     """Run the full pipeline for one iteration and return iteration state.
 
@@ -128,7 +128,7 @@ def pipeline_executor(
     1. POST /api/generate/from-image with the given input image.
     2. Extract the compact suggestion from the response.
     3. POST /api/generate/instructions for the compact suggestion.
-    4. Save the returned PDF to iteration_dir/instructions.pdf.
+    4. Save the returned PDF to runs_dir/<file_prefix>_instructions.pdf.
     5. Copy the preview PNG from tmp/<uuid_part>/suggestion_0_preview.png if present.
     6. Return a dict with iteration state for downstream advisors.
     """
@@ -175,13 +175,13 @@ def pipeline_executor(
             raise ValueError("instructions endpoint returned empty PDF bytes")
 
     # --- Step 4: Save PDF ---
-    pdf_path = iteration_dir / "instructions.pdf"
+    pdf_path = runs_dir / f"{file_prefix}_instructions.pdf"
     pdf_path.write_bytes(pdf_bytes)
     log.info("pipeline_executor: PDF saved → %s (%d bytes)", pdf_path, len(pdf_bytes))
 
     # --- Step 5: Copy preview PNG ---
     preview_src = TMP_DIR_PATH / uuid_part / "suggestion_0_preview.png"
-    preview_dst = iteration_dir / "preview.png"
+    preview_dst = runs_dir / f"{file_prefix}_preview.png"
     if preview_src.exists():
         shutil.copy2(preview_src, preview_dst)
         log.info("pipeline_executor: Preview PNG copied → %s", preview_dst)
@@ -408,12 +408,12 @@ def _run_single_advisor(
     return parsed
 
 
-def advisor_engine(iteration_dir: Path, iteration_state: dict[str, Any]) -> dict[str, Any]:
+def advisor_engine(runs_dir: Path, file_prefix: str, iteration_state: dict[str, Any]) -> dict[str, Any]:
     """Run all advisors in parallel and return a scored results report.
 
     Loads advisors.yaml, spawns 7 parallel claude -p calls, applies z-score
-    normalisation, computes sampling weights, saves advisor_reports.json to
-    iteration_dir, and returns the report dict.
+    normalisation, computes sampling weights, saves <file_prefix>_advisor_reports.json
+    to runs_dir, and returns the report dict.
     """
     with ADVISORS_YAML.open("r", encoding="utf-8") as fh:
         config = yaml.safe_load(fh)
@@ -469,7 +469,7 @@ def advisor_engine(iteration_dir: Path, iteration_state: dict[str, Any]) -> dict
         },
     }
 
-    report_path = iteration_dir / "advisor_reports.json"
+    report_path = runs_dir / f"{file_prefix}_advisor_reports.json"
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     log.info("advisor_engine: saved report → %s", report_path)
 
@@ -831,8 +831,8 @@ def main() -> None:
                 sys.exit(1)
 
         for i in range(1, args.iterations + 1):
-            iteration_dir = RUNS_DIR / f"iteration_{i}"
-            iteration_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%H%M")
+            file_prefix = f"i{i}_{ts}"
             log.info("--- Iteration %d/%d ---", i, args.iterations)
 
             if args.dry_run:
@@ -848,10 +848,10 @@ def main() -> None:
                 input_image_path.name,
                 height_studs,
             )
-            iteration_state = pipeline_executor(iteration_dir, input_image_path, height_studs)
+            iteration_state = pipeline_executor(RUNS_DIR, file_prefix, input_image_path, height_studs)
 
             # b) Run advisors
-            advisor_results = advisor_engine(iteration_dir, iteration_state)
+            advisor_results = advisor_engine(RUNS_DIR, file_prefix, iteration_state)
 
             # c) Check quality threshold (avg_raw: mean of 1-8 advisor scores)
             avg = advisor_results.get("avg_raw")

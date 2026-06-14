@@ -806,3 +806,41 @@ Step 2 (operator M1 — diagnose rembg fill% on live server) deferred. Step 3 (b
 | ROTSTEP hero-page blocked | Appending ROTSTEP+STEP after build steps breaks `test_step_markers_every_8`, `test_trailing_step_marker_present`, `test_step_marker_after_exactly_8`. These tests are intentional — update them if pursuing hero page. |
 | shape_fidelity still at 3 | Root cause is rembg sparsity (M1 UAT pending). Sparse-fill guard prevents 1×1 column but doesn't fix the star shape. birefnet-general model (Step 3) would help most. |
 | build_stability at 2 | Cross-bond fix (7d202dc) didn't move the score. Advisors may want true masonry interlocking across layers, not just within-layer alternation. |
+| build_stability still at 2 | Cross-bond alternating orientation committed (7d202dc) but score unchanged. Advisors likely want true interlocking across layer boundaries, not same-layer orientation variety. |
+
+---
+
+## Harness run 7 (2026-06-14)
+
+**Summary:** 5 iterations, avg raw 3.125→3.875. 3 committed, 2 reverted. Key finding: `!LPUB FADE STEPS ENABLED` committed in run 6 iter 3 was malformed (missing TRUE/FALSE arg), causing LPub3D to blank every PDF page — root cause of 0 scores for instruction_clarity and pdf_completeness throughout this run. Fixed in iter 4. pdf_completeness still 0 and instruction_clarity still 1 in iter 5 (post-fix), suggesting additional PDF quality issues remain.
+
+| Iter | SHA | Dimension | Result | Notes |
+|---|---|---|---|---|
+| 1 | — | shape_fidelity | SKIPPED_REVERT | birefnet-general model switch broke `test_remove_background_returns_rgba_image` |
+| 2 | — | reference_fidelity | SKIPPED_REVERT | OR-pool resize change broke `test_extrude_silhouette_rgb_input_treated_as_opaque` |
+| 3 | 2c05feb | technical_validity | PASS_COMMITTED | Tile decomposition: non-standard bricks (e.g. 2×3) split into 1-wide tile strips |
+| 4 | 90efe32 | pdf_completeness | PASS_COMMITTED | Removed malformed `!LPUB FADE STEPS ENABLED` (blanked every PDF page) |
+| 5 | 0533e5e | aesthetics | PASS_COMMITTED | LDView camera latitude 30°→45°, resolution 800×600 |
+
+### Harness output restructure (this session)
+
+Flat output directory: `iteration_N/` subdirectories removed. All per-iteration files now written directly to `tests/harness/runs/` with prefix `i{n}_{HHmm}_` (e.g. `i1_1435_instructions.pdf`). Tests updated accordingly.
+
+### Files changed (run 7 + restructure)
+
+| File | Change |
+|---|---|
+| `src/brickomancer/services/ldraw_writer.py` | Tile decomposition for non-standard brick sizes (2c05feb); malformed FADE header removed (90efe32) |
+| `src/brickomancer/utils/subprocess_utils.py` | LDView camera latitude 30°→45°, 800×600 resolution (0533e5e) |
+| `tests/harness/run_harness.py` | Flat output dir: `pipeline_executor` and `advisor_engine` take `(runs_dir, file_prefix, ...)` instead of `iteration_dir`; main loop computes `i{n}_{HHmm}` prefix |
+| `tests/harness/test_pipeline_executor.py` | Updated all calls for new signature + filename assertions |
+| `tests/harness/test_advisor_engine.py` | Updated integration test calls for new signature |
+
+### Fresh context notes for run 7
+
+| Issue | Detail |
+|---|---|
+| FADE STEPS header history | Run 6 iter 3 added `0 !LPUB FADE STEPS ENABLED` (no TRUE/FALSE). Run 7 iter 4 removed it. Do NOT re-add without `TRUE` argument: `0 !LPUB FADE STEPS ENABLED TRUE`. |
+| pdf_completeness still 0 post-fix | Even after removing malformed FADE header, iter 5 scored pdf_completeness: 0 and instruction_clarity: 1. PDF is 1186 bytes — consistent with previous runs. Root cause unclear; advisors may have strict page-content requirements. |
+| birefnet model test break | Dev agent tried birefnet-general switch (iter 1) but `test_remove_background_returns_rgba_image` failed. Test expects RGBA output; birefnet integration changed the return type. If retrying, fix the test alongside the implementation. |
+| Flat output naming | Files: `i{n}_{HHmm}_instructions.pdf`, `i{n}_{HHmm}_preview.png`, `i{n}_{HHmm}_advisor_reports.json` — all in `tests/harness/runs/`. |

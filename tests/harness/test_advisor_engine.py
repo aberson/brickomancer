@@ -220,11 +220,11 @@ class TestAdvisorEngineIntegration:
         patch_target = "tests.harness.run_harness.subprocess.run"
         with patch.dict("os.environ", {"CLAUDE_CODE_OAUTH_TOKEN": "fake-token"}):
             with patch(patch_target, return_value=mock_proc) as mock_run:
-                result = advisor_engine(iteration_dir, fake_state)
+                result = advisor_engine(iteration_dir, "test", fake_state)
 
         assert mock_run.call_count == 8
 
-        report_path = iteration_dir / "advisor_reports.json"
+        report_path = iteration_dir / "test_advisor_reports.json"
         assert report_path.exists(), "advisor_reports.json must be written"
 
         saved = json.loads(report_path.read_text())
@@ -254,7 +254,7 @@ class TestAdvisorEngineIntegration:
                 "tests.harness.run_harness.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=30),
             ):
-                result = advisor_engine(iteration_dir, fake_state)
+                result = advisor_engine(iteration_dir, "test", fake_state)
 
         assert math.isclose(result["avg_normalized"], 5.0), (
             f"Expected 5.0 but got {result['avg_normalized']}"
