@@ -179,6 +179,8 @@
 
 **Issue:** #38
 
+**Status:** DONE (2026-06-13)
+
 **Flags:** (none)
 
 **Files:** `tests/harness/run_harness.py`
