@@ -1,19 +1,19 @@
-"""Color service — KMeans color extraction and ΔE2000 LEGO color matching.
+"""Color service â€” KMeans color extraction and Î”E2000 LEGO color matching.
 
 Two public functions:
   extract_colors(image_path) -> list[ColorMatch]
       Runs KMeans (k=8) in Lab color space on the image pixels, then maps
-      each cluster centroid to the nearest LEGO color via ΔE2000.
+      each cluster centroid to the nearest LEGO color via Î”E2000.
 
   match_color(rgb_hex) -> ColorMatch
-      Maps a single hex string to the nearest LEGO color via ΔE2000.
+      Maps a single hex string to the nearest LEGO color via Î”E2000.
 
 Dependencies
 ------------
-- basic-colormath  →  `basic_colormath` (get_delta_e_lab)
-- scikit-image     →  `skimage.color.rgb2lab`  (KMeans Lab conversion + palette conversion)
-- Pillow           →  image loading
-- scikit-learn     →  KMeans
+- basic-colormath  â†’  `basic_colormath` (get_delta_e_lab)
+- scikit-image     â†’  `skimage.color.rgb2lab`  (KMeans Lab conversion + palette conversion)
+- Pillow           â†’  image loading
+- scikit-learn     â†’  KMeans
 - numpy
 """
 
@@ -33,6 +33,20 @@ from brickomancer.services.data_service import list_colors
 _K_CLUSTERS = 8  # Number of KMeans clusters
 
 _LAB = tuple[float, float, float]
+
+# Cached palette: list of (color_id, color_name, hex_str, lab) built once on first use.
+_palette_lab_cache: list[tuple[int, str, str, _LAB]] | None = None
+
+
+def _get_palette_lab() -> list[tuple[int, str, str, _LAB]]:
+    global _palette_lab_cache
+    if _palette_lab_cache is None:
+        _palette_lab_cache = []
+        for entry in list_colors():
+            lego_rgb = _hex_to_rgb255(entry["hex"])
+            lego_lab = _rgb255_to_lab(*lego_rgb)
+            _palette_lab_cache.append((entry["id"], entry["name"], entry["hex"], lego_lab))
+    return _palette_lab_cache
 
 
 def _hex_to_rgb255(hex_str: str) -> tuple[float, float, float]:
@@ -57,7 +71,7 @@ def _rgb255_to_lab(r: float, g: float, b: float) -> _LAB:
 
 
 def _nearest_lego_color(lab: _LAB) -> tuple[int, str, str]:
-    """Find the nearest LEGO color by ΔE2000.
+    """Find the nearest LEGO color by Î”E2000.
 
     Args:
         lab: Lab color tuple (L, a, b) as produced by skimage.color.rgb2lab.
@@ -65,19 +79,17 @@ def _nearest_lego_color(lab: _LAB) -> tuple[int, str, str]:
     Returns:
         (color_id, color_name, hex_string)
     """
-    palette = list_colors()
-    best_entry: dict | None = None
+    palette = _get_palette_lab()
+    if not palette:
+        raise ValueError("list_colors() returned an empty palette")
+    best_id, best_name, best_hex = palette[0][0], palette[0][1], palette[0][2]
     best_dist = float("inf")
-    for entry in palette:
-        lego_rgb = _hex_to_rgb255(entry["hex"])
-        lego_lab = _rgb255_to_lab(*lego_rgb)
+    for color_id, color_name, hex_str, lego_lab in palette:
         dist = get_delta_e_lab(lab, lego_lab)
         if dist < best_dist:
             best_dist = dist
-            best_entry = entry
-    if best_entry is None:
-        raise ValueError("list_colors() returned an empty palette")
-    return best_entry["id"], best_entry["name"], best_entry["hex"]
+            best_id, best_name, best_hex = color_id, color_name, hex_str
+    return best_id, best_name, best_hex
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +151,7 @@ def extract_colors(image_path: str) -> list[ColorMatch]:
 
 
 def match_color(rgb_hex: str) -> ColorMatch:
-    """Find the nearest LEGO color for a given RGB hex string using ΔE2000.
+    """Find the nearest LEGO color for a given RGB hex string using Î”E2000.
 
     Args:
         rgb_hex: 6-character hex string (with or without leading '#'),
