@@ -1,28 +1,29 @@
-"""Suggestion service â€” generates 3 LEGO build suggestions from a voxel grid.
+"""Suggestion service -- generates 3 LEGO build suggestions from a voxel grid.
 
 Public API
 ----------
 generate_suggestions(grid, colors, tmp_dir, request_id, piece_inventory) -> list[Suggestion]
     Produces compact, standard, and detailed tier suggestions.  For each tier:
       1. Optionally downsample the voxel grid (compact tier only).
-      2. Call brick_packer.pack() with the dominant color.
+      2. Call brick_packer.pack() with the tier color.
       3. Write an LDraw .ldr file via ldraw_writer.write_ldr().
       4. Render a preview PNG via subprocess_utils.run_ldview().
       5. Build a parts list from the placements.
 
 Tier definitions
 ----------------
-  0 â€” compact  : 2x2 OR-pool on X and Z axes (preserves star arms on odd indices),
+  0 -- compact  : 2x2 OR-pool on X and Z axes (preserves star arms on odd indices),
                  full brick-type set.
-  1 â€” standard : original grid, full brick-type set.
-  2 â€” detailed : original grid, only 1Ã—2 and 1Ã—1 bricks for finer grain.
+  1 -- standard : original grid, full brick-type set.
+  2 -- detailed : original grid, only 1x2 and 1x1 bricks for finer grain.
 
 Color assignment
 ----------------
-The dominant ColorMatch drives all tiers. Background colors (low saturation,
-high lightness) are skipped so the subject color is used instead of the
-background. Falls back to colors[0] if no subject color is found.
-Its color_id is passed to pack(); its name/hex are used in the parts list.
+The dominant ColorMatch drives compact and standard tiers. The detailed tier
+uses the secondary non-background color (the subject color with the highest
+lightness contrast from dominant) when one is available, so the three
+suggestions collectively represent more of the input image's color palette.
+Falls back to dominant when no secondary color exists.
 """
 
 from collections import defaultdict
@@ -63,6 +64,17 @@ def _downsample(grid: np.ndarray) -> np.ndarray:
     return np.asarray(grid.reshape(Xp // 2, 2, Y, Zp // 2, 2).any(axis=(1, 4)))
 
 
+def _is_subject_color(c: ColorMatch) -> bool:
+    """Return True if the color is not a background color (near-white/near-gray)."""
+    h = c.hex.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    max_c = max(r, g, b)
+    min_c = min(r, g, b)
+    saturation = (max_c - min_c) / max_c if max_c > 0 else 0.0
+    lightness = (max_c + min_c) / 510.0
+    return saturation > 0.15 or lightness < 0.35
+
+
 def _select_subject_color(colors: list[ColorMatch]) -> ColorMatch:
     """Return the first non-background color from the sorted color list.
 
@@ -71,15 +83,34 @@ def _select_subject_color(colors: list[ColorMatch]) -> ColorMatch:
     build color instead of the actual subject.
     """
     for c in colors:
-        h = c.hex.lstrip("#")
-        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-        max_c = max(r, g, b)
-        min_c = min(r, g, b)
-        saturation = (max_c - min_c) / max_c if max_c > 0 else 0.0
-        lightness = (max_c + min_c) / 510.0
-        if saturation > 0.15 or lightness < 0.35:
+        if _is_subject_color(c):
             return c
     return colors[0]
+
+
+def _select_secondary_color(colors: list[ColorMatch], dominant: ColorMatch) -> ColorMatch | None:
+    """Return the non-background subject color with highest lightness contrast from dominant.
+
+    Selecting by lightness contrast (rather than cluster-weight order) ensures
+    a dark accent color (e.g. black eyes on a yellow star) is preferred over
+    another near-dominant hue that happens to rank second by pixel count.
+    """
+    h = dominant.hex.lstrip("#")
+    dr, dg, db = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    dom_lightness = (max(dr, dg, db) + min(dr, dg, db)) / 510.0
+
+    best: ColorMatch | None = None
+    best_contrast = -1.0
+    for c in colors:
+        if c.color_id != dominant.color_id and _is_subject_color(c):
+            h2 = c.hex.lstrip("#")
+            r2, g2, b2 = int(h2[0:2], 16), int(h2[2:4], 16), int(h2[4:6], 16)
+            lightness = (max(r2, g2, b2) + min(r2, g2, b2)) / 510.0
+            contrast = abs(lightness - dom_lightness)
+            if best is None or contrast > best_contrast:
+                best_contrast = contrast
+                best = c
+    return best
 
 
 def _build_parts_list(placements: list) -> list[PartCount]:
@@ -127,7 +158,7 @@ def generate_suggestions(
     """Generate compact, standard, and detailed LEGO build suggestions.
 
     Args:
-        grid: numpy.ndarray[bool] of shape (X, Y, Z) â€” voxel occupancy.
+        grid: numpy.ndarray[bool] of shape (X, Y, Z) -- voxel occupancy.
         colors: list[ColorMatch] sorted by cluster_weight descending (dominant first).
         tmp_dir: Directory path for writing .ldr and .png scratch files.
         request_id: UUID string used as a prefix for suggestion IDs and filenames.
@@ -145,6 +176,7 @@ def generate_suggestions(
         raise ValueError("colors must be non-empty")
 
     dominant = _select_subject_color(colors)
+    secondary = _select_secondary_color(colors, dominant)
     tmp_path = Path(tmp_dir)
     tmp_path.mkdir(parents=True, exist_ok=True)
 
@@ -161,9 +193,12 @@ def generate_suggestions(
         # gracefully (returns []), so no special handling needed here.
 
         # --- 2. Pack bricks --------------------------------------------------
+        # Detailed tier uses the secondary subject color (e.g. outline/shadow)
+        # so the three suggestions collectively cover more of the image palette.
+        tier_color = secondary if (tier_name == "detailed" and secondary is not None) else dominant
         placements = brick_packer.pack(
             working_grid,
-            color_id=dominant.color_id,
+            color_id=tier_color.color_id,
             brick_set=brick_set_override,
         )
 
