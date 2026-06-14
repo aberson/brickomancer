@@ -58,8 +58,13 @@ def _apply_surface_tiles(placements: list[BrickPlacement]) -> list[BrickPlacemen
 
     result: list[BrickPlacement] = []
     for bp in placements:
+        is_top_surface = all(top_y_per_stud.get(s) == bp.y for s in _footprint(bp))
+        if not is_top_surface:
+            result.append(bp)
+            continue
+
         tile_id = TILE_PART_IDS.get((bp.width, bp.length))
-        if tile_id and all(top_y_per_stud.get(s) == bp.y for s in _footprint(bp)):
+        if tile_id:
             result.append(
                 BrickPlacement(
                     part_id=tile_id,
@@ -72,7 +77,38 @@ def _apply_surface_tiles(placements: list[BrickPlacement]) -> list[BrickPlacemen
                 )
             )
         else:
-            result.append(bp)
+            strip_tile_id = TILE_PART_IDS.get((1, bp.length))
+            if strip_tile_id:
+                for dx in range(bp.width):
+                    result.append(
+                        BrickPlacement(
+                            part_id=strip_tile_id,
+                            color_id=bp.color_id,
+                            x=bp.x + dx,
+                            y=bp.y,
+                            z=bp.z,
+                            width=1,
+                            length=bp.length,
+                        )
+                    )
+            else:
+                unit_tile_id = TILE_PART_IDS.get((1, 1))
+                if unit_tile_id:
+                    for dx in range(bp.width):
+                        for dz in range(bp.length):
+                            result.append(
+                                BrickPlacement(
+                                    part_id=unit_tile_id,
+                                    color_id=bp.color_id,
+                                    x=bp.x + dx,
+                                    y=bp.y,
+                                    z=bp.z + dz,
+                                    width=1,
+                                    length=1,
+                                )
+                            )
+                else:
+                    result.append(bp)
     return result
 
 
