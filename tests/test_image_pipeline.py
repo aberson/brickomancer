@@ -1,8 +1,4 @@
-"""Tests for image_pipeline — rembg background removal, TripoSR mesh, voxelization.
-
-TripoSR / CUDA are never imported here — the TripoSR step is mocked via
-monkeypatching image_pipeline._run_triposr so tests run on any CI machine.
-"""
+"""Tests for image_pipeline — rembg background removal, silhouette extrusion, voxelization."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -163,99 +159,89 @@ def test_voxelize_xz_dimensions_greater_than_two(cube_obj: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Unit tests — run() with mocked TripoSR step
+# Unit tests — _extrude_silhouette
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
-def mock_triposr(cube_obj: Path, tmp_path: Path):
-    """Monkeypatch _run_triposr to return a pre-built OBJ without CUDA."""
+def test_extrude_silhouette_height_dimension() -> None:
+    """_extrude_silhouette Y dimension equals height_studs exactly."""
+    from PIL import Image
 
-    def _fake_run_triposr(pil_image, output_dir: Path) -> Path:
-        # Copy our pre-built cube OBJ into the requested output_dir
-        dest = output_dir / "mesh.obj"
-        dest.write_text(cube_obj.read_text())
-        return dest
-
-    with patch.object(ip, "_run_triposr", side_effect=_fake_run_triposr):
-        yield
+    rgba = Image.new("RGBA", (20, 20), color=(255, 0, 0, 255))
+    for height in (3, 5, 8, 10):
+        result = ip._extrude_silhouette(rgba, height)
+        assert result.shape[1] == height, f"Y={result.shape[1]} != {height}"
 
 
-def test_run_raises_import_error_when_triposr_unavailable(tmp_path: Path) -> None:
-    """run() raises ImportError with a helpful message when TripoSR is absent."""
+def test_extrude_silhouette_uniform_layers() -> None:
+    """All Y layers share an identical XZ cross-section (pure vertical extrusion)."""
+    from PIL import Image
+
+    rgba = Image.new("RGBA", (20, 20), color=(0, 0, 0, 0))
+    for x in range(10):
+        for y in range(20):
+            rgba.putpixel((x, y), (255, 0, 0, 255))
+
+    result = ip._extrude_silhouette(rgba, height_studs=4)
+    for y in range(1, 4):
+        assert np.array_equal(result[:, y, :], result[:, 0, :])
+
+
+def test_extrude_silhouette_rgb_input_treated_as_opaque() -> None:
+    """RGB input (no alpha) is treated as fully opaque — all voxels filled."""
+    from PIL import Image
+
+    rgb = Image.new("RGB", (10, 10), color=(255, 0, 0))
+    result = ip._extrude_silhouette(rgb, height_studs=4)
+    assert result.all(), "All voxels should be filled for a fully opaque input"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — run()
+# ---------------------------------------------------------------------------
+
+
+def test_run_raises_import_error_when_rembg_unavailable(tmp_path: Path) -> None:
+    """run() raises ImportError when rembg is absent."""
     from PIL import Image
 
     img = Image.new("RGB", (32, 32), color=(100, 150, 200))
     img_path = tmp_path / "input.jpg"
     img.save(img_path, format="JPEG")
 
-    with patch.object(ip, "_TSR_AVAILABLE", False):
-        with pytest.raises(ImportError, match="TripoSR is not installed"):
+    with patch.object(ip, "_REMBG_AVAILABLE", False):
+        with pytest.raises(ImportError, match="rembg is not available"):
             ip.run(str(img_path), height_studs=8)
 
 
-def test_run_returns_bool_array_shape_with_mock(mock_triposr, tmp_path: Path) -> None:
-    """run() with mocked TripoSR returns a bool array with the correct shape.
-
-    Y >= height_studs because trimesh voxelization adds a padding row; X,Z > 2
-    because a cube-like mesh has multiple studs of lateral extent.
-    """
+def test_run_returns_bool_array_shape(tmp_path: Path) -> None:
+    """run() returns a (X, height_studs, Z) bool array; _remove_background is mocked."""
     from PIL import Image
 
-    # Patch _TSR_AVAILABLE so the ImportError guard is bypassed
-    with patch.object(ip, "_TSR_AVAILABLE", True):
-        img = Image.new("RGB", (32, 32), color=(100, 150, 200))
-        img_path = tmp_path / "input.jpg"
-        img.save(img_path, format="JPEG")
+    rgba = Image.new("RGBA", (32, 32), color=(200, 100, 50, 255))
+    img_path = tmp_path / "input.jpg"
+    rgba.convert("RGB").save(img_path, format="JPEG")
 
-        # Also mock _remove_background to skip actual rembg call in this fast test
-        with patch.object(ip, "_remove_background", return_value=img):
-            result = ip.run(str(img_path), height_studs=8)
+    with patch.object(ip, "_remove_background", return_value=rgba):
+        result = ip.run(str(img_path), height_studs=8)
 
     assert isinstance(result, np.ndarray)
     assert result.dtype == bool
     assert result.ndim == 3
-    assert result.shape[1] >= 8, f"Expected Y>=8, got shape {result.shape}"
-    assert result.shape[0] > 2, f"X={result.shape[0]} not > 2"
-    assert result.shape[2] > 2, f"Z={result.shape[2]} not > 2"
+    assert result.shape[1] == 8, f"Expected Y==8, got shape {result.shape}"
+    assert result.shape[0] > 0, f"X={result.shape[0]} must be > 0"
+    assert result.shape[2] > 0, f"Z={result.shape[2]} must be > 0"
 
 
-def test_run_default_height_studs_10(mock_triposr, tmp_path: Path) -> None:
-    """run() with default height_studs=10 returns shape (X, >=10, Z)."""
+def test_run_default_height_studs_10(tmp_path: Path) -> None:
+    """run() with default height_studs=10 returns shape (X, 10, Z)."""
     from PIL import Image
 
-    with patch.object(ip, "_TSR_AVAILABLE", True):
-        img = Image.new("RGB", (32, 32), color=(200, 200, 200))
-        img_path = tmp_path / "input.jpg"
-        img.save(img_path, format="JPEG")
+    rgba = Image.new("RGBA", (32, 32), color=(200, 200, 200, 255))
+    img_path = tmp_path / "input.jpg"
+    rgba.convert("RGB").save(img_path, format="JPEG")
 
-        with patch.object(ip, "_remove_background", return_value=img):
-            result = ip.run(str(img_path))  # default height_studs=10
+    with patch.object(ip, "_remove_background", return_value=rgba):
+        result = ip.run(str(img_path))  # default height_studs=10
 
-    assert result.shape[1] >= 10, f"Expected Y>=10, got shape {result.shape}"
-
-
-def test_run_raises_value_error_when_trimesh_load_returns_scene(
-    mock_triposr, tmp_path: Path
-) -> None:
-    """run() raises ValueError if trimesh.load returns a Scene instead of a Trimesh.
-
-    trimesh.load with force='mesh' *tries* to coerce but does not guarantee a
-    Trimesh (e.g. when the mesh is empty or coercion fails).  The isinstance guard
-    inside run() must catch this case.  We inject the failure by patching
-    trimesh.load to return a Scene directly, bypassing coercion.
-    """
-    from PIL import Image
-
-    with patch.object(ip, "_TSR_AVAILABLE", True):
-        img = Image.new("RGB", (32, 32), color=(100, 150, 200))
-        img_path = tmp_path / "input.jpg"
-        img.save(img_path, format="JPEG")
-
-        with patch.object(ip, "_remove_background", return_value=img):
-            # Patch trimesh.load on the module object that image_pipeline imported.
-            # This simulates a case where force="mesh" coercion fails and a Scene
-            # is returned instead of a Trimesh.
-            with patch.object(ip.trimesh, "load", return_value=trimesh.Scene()):
-                with pytest.raises(ValueError, match="Expected a Trimesh"):
-                    ip.run(str(img_path), height_studs=8)
+    assert result.shape[1] == 10, f"Expected Y==10, got shape {result.shape}"

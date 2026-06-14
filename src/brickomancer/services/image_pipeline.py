@@ -7,7 +7,6 @@ helpful message when either dependency is absent.
 """
 
 import io
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -144,12 +143,40 @@ def _voxelize(mesh: trimesh.Trimesh, pitch: float = _STUD_METERS) -> np.ndarray:
     _scale_mesh).  The default _STUD_METERS (0.0096 m) makes each voxel row
     correspond to one stud.
 
-    Uses method='subdivide' rather than method='ray' (the plan spec default) to
-    avoid the optional 'rtree' package dependency; produces equivalent fill for
+    Uses method=’subdivide’ rather than method=’ray’ (the plan spec default) to
+    avoid the optional ‘rtree’ package dependency; produces equivalent fill for
     watertight meshes.
     """
     voxels = mesh.voxelized(pitch=pitch, method="subdivide").fill()
     return np.asarray(voxels.matrix, dtype=bool)
+
+
+def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarray:
+    """Voxelise by extruding the rembg alpha-channel silhouette vertically.
+
+    Produces a (X, height_studs, Z) bool array where every Y layer shares the
+    same XZ cross-section matching the subject silhouette.  This gives far better
+    shape fidelity for cartoon/clip-art images than TripoSR, which reconstructs
+    them as roughly rectangular blobs.
+    """
+    if rgba_image.mode != "RGBA":
+        rgba_image = rgba_image.convert("RGBA")
+    w, h = rgba_image.size
+    if w >= h:
+        footprint_x = height_studs
+        footprint_z = max(1, round(height_studs * h / w))
+    else:
+        footprint_z = height_studs
+        footprint_x = max(1, round(height_studs * w / h))
+
+    alpha = rgba_image.split()[3]
+    alpha_small = alpha.resize((footprint_x, footprint_z), Image.Resampling.LANCZOS)
+    mask_zx = np.array(alpha_small) > 128  # shape (footprint_z, footprint_x)
+
+    voxels = np.zeros((footprint_x, height_studs, footprint_z), dtype=bool)
+    for y in range(height_studs):
+        voxels[:, y, :] = mask_zx.T  # (footprint_z, footprint_x).T → (footprint_x, footprint_z)
+    return voxels
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +185,11 @@ def _voxelize(mesh: trimesh.Trimesh, pitch: float = _STUD_METERS) -> np.ndarray:
 
 
 def run(image_path: str, height_studs: int = 10) -> np.ndarray:
-    """Full image pipeline: rembg background removal â†’ TripoSR mesh â†’ voxelization.
+    """Full image pipeline: rembg background removal → silhouette extrusion → voxel grid.
+
+    Uses 2-D alpha-channel extrusion so cartoon/clip-art images produce the correct
+    silhouette shape instead of the rectangular blob that TripoSR reconstructs from
+    flat cartoon inputs.
 
     Args:
         image_path: Path to the input image (JPEG, PNG, etc.).
@@ -168,31 +199,7 @@ def run(image_path: str, height_studs: int = 10) -> np.ndarray:
         numpy.ndarray[bool] of shape (X, height_studs, Z).
 
     Raises:
-        ImportError: If TripoSR / torch is not installed.
+        ImportError: If rembg is not installed.
     """
-    if not _TSR_AVAILABLE:
-        raise ImportError(
-            "TripoSR is not installed.  Install it with:\n"
-            "  pip install torch torchvision torchaudio "
-            "--index-url https://download.pytorch.org/whl/cu118\n"
-            "  pip install git+https://github.com/VAST-AI-Research/TripoSR.git"
-        )
-
     pil_image = _remove_background(image_path)
-
-    # Load mesh inside the TemporaryDirectory context and immediately deep-copy
-    # all numpy arrays via .copy() so that trimesh releases any open file handles
-    # before the temp dir is cleaned up.  On Windows, shutil.rmtree raises
-    # PermissionError if a file handle is still open when the context exits.
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        obj_path = _run_triposr(pil_image, tmp_path)
-        _loaded = trimesh.load(str(obj_path), force="mesh")
-        if not isinstance(_loaded, trimesh.Trimesh):
-            raise ValueError(f"Expected a Trimesh, got {type(_loaded)}")
-        loaded = _loaded.copy()  # deep-copy: releases all file handles
-
-    mesh: trimesh.Trimesh = loaded
-    mesh = _scale_mesh(mesh, height_studs)
-    voxels = _voxelize(mesh)
-    return np.transpose(voxels, (0, 2, 1))
+    return _extrude_silhouette(pil_image, height_studs)
