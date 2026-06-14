@@ -21,7 +21,7 @@ import pytest
 
 from brickomancer.models.brick import ColorMatch
 from brickomancer.models.schemas import Suggestion
-from brickomancer.services.suggestion_service import generate_suggestions
+from brickomancer.services.suggestion_service import _downsample, generate_suggestions
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -471,3 +471,58 @@ class TestGenerateSuggestionsEmptyPlacements:
             assert s.preview_url == "", (
                 f"Expected empty preview_url for empty placements, got '{s.preview_url}'"
             )
+
+
+# ---------------------------------------------------------------------------
+# Downsample: 2x2 OR-pool preserves star shape
+# ---------------------------------------------------------------------------
+
+
+def test_compact_downsample_preserves_star_shape() -> None:
+    """2x2 OR-pool preserves studs on odd XZ indices that stride-2 would lose.
+
+    Grid: 20×5×20 where every stud is at an ODD X index and an ODD Z index
+    (a sparse checker pattern on odd-only positions).  Stride-2 sampling
+    (grid[::2, :, ::2]) would retain 0 studs because it only visits even
+    indices.  OR-pooling collapses each 2×2 XZ tile to True if any corner is
+    True, so all odd-index studs survive in the pooled output.
+
+    Retention metric: result.sum() / (grid.sum() / 4).  Each output tile
+    represents 4 input positions; a tile that fires contributes 1 output stud
+    for up to 4 input studs, so 100% retention means result.sum() == grid.sum()/4.
+    We assert ≥50% tile-level retention rather than a raw stud count ratio.
+    """
+    X, Y, Z = 20, 5, 20
+    grid = np.zeros((X, Y, Z), dtype=bool)
+
+    # Set studs only at ODD X and ODD Z positions (stride-2 completely misses these)
+    grid[1::2, :, 1::2] = True
+
+    # Sanity: all set positions are on odd indices
+    assert grid[1, 0, 1]
+    assert grid[3, 0, 3]
+    assert not grid[0, 0, 0]  # even/even must be False
+    assert not grid[2, 0, 2]
+
+    result = _downsample(grid)
+
+    # Shape: XZ halved, Y preserved
+    assert result.shape == (X // 2, Y, Z // 2), (
+        f"Expected shape ({X // 2}, {Y}, {Z // 2}), got {result.shape}"
+    )
+
+    # Each output tile covers a 2×2 XZ patch; an odd-only input means exactly
+    # one input stud per tile fires → result.sum() == grid.sum().
+    # (10 * 10 * 5 = 500 output True; 10 * 10 * 5 = 500 input True — same count)
+    assert result.sum() == grid.sum(), (
+        f"OR-pool of odd-only grid should have same stud count: "
+        f"grid={grid.sum()}, result={result.sum()}"
+    )
+
+    # Retention ratio as defined in problem statement: result.sum() / grid.sum() >= 0.50
+    # Here it equals 1.0 (100% retention), far above the 50% floor.
+    retention = result.sum() / grid.sum()
+    assert retention >= 0.50, (
+        f"Expected ≥50% stud retention, got {retention:.2%} "
+        f"(grid.sum={grid.sum()}, result.sum={result.sum()})"
+    )

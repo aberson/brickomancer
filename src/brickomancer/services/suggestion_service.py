@@ -12,7 +12,7 @@ generate_suggestions(grid, colors, tmp_dir, request_id, piece_inventory) -> list
 
 Tier definitions
 ----------------
-  0 â€” compact  : every-other-stud downsample (step=2 on X and Z axes),
+  0 â€” compact  : 2x2 OR-pool on X and Z axes (preserves star arms on odd indices),
                  full brick-type set.
   1 â€” standard : original grid, full brick-type set.
   2 â€” detailed : original grid, only 1Ã—2 and 1Ã—1 bricks for finer grain.
@@ -53,8 +53,14 @@ _TIERS: list[tuple[str, bool, list[tuple[int, int]] | None]] = [
 
 
 def _downsample(grid: np.ndarray) -> np.ndarray:
-    """Keep every other stud on X and Z (step=2), preserving all Y layers."""
-    return grid[::2, :, ::2]
+    """2x2 OR-pool in XZ: True if any of the 4 source studs is True. Preserves Y."""
+    X, Y, Z = grid.shape
+    px = X % 2
+    pz = Z % 2
+    if px or pz:
+        grid = np.pad(grid, ((0, px), (0, 0), (0, pz)), mode="edge")
+    Xp, _, Zp = grid.shape
+    return np.asarray(grid.reshape(Xp // 2, 2, Y, Zp // 2, 2).any(axis=(1, 4)))
 
 
 def _select_subject_color(colors: list[ColorMatch]) -> ColorMatch:
