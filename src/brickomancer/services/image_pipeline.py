@@ -47,6 +47,11 @@ except ImportError:
 # pitch value here is 0.0096 m, not 8.0.
 _STUD_METERS: float = 0.0096
 
+# Minimum XZ footprint in studs for silhouette sampling. At height_studs=5 a
+# star downsampled to 5x5 pixels loses all five points to LANCZOS blur; 20
+# studs gives enough pixels to preserve thin radiating arms.
+_MIN_FOOTPRINT_STUDS: int = 20
+
 # ---------------------------------------------------------------------------
 # Internal helpers â€” functions
 # ---------------------------------------------------------------------------
@@ -143,8 +148,8 @@ def _voxelize(mesh: trimesh.Trimesh, pitch: float = _STUD_METERS) -> np.ndarray:
     _scale_mesh).  The default _STUD_METERS (0.0096 m) makes each voxel row
     correspond to one stud.
 
-    Uses method=’subdivide’ rather than method=’ray’ (the plan spec default) to
-    avoid the optional ‘rtree’ package dependency; produces equivalent fill for
+    Uses method='subdivide' rather than method='ray' (the plan spec default) to
+    avoid the optional 'rtree' package dependency; produces equivalent fill for
     watertight meshes.
     """
     voxels = mesh.voxelized(pitch=pitch, method="subdivide").fill()
@@ -163,11 +168,11 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
         rgba_image = rgba_image.convert("RGBA")
     w, h = rgba_image.size
     if w >= h:
-        footprint_x = height_studs
-        footprint_z = max(1, round(height_studs * h / w))
+        footprint_x = max(height_studs, _MIN_FOOTPRINT_STUDS)
+        footprint_z = max(1, round(footprint_x * h / w))
     else:
-        footprint_z = height_studs
-        footprint_x = max(1, round(height_studs * w / h))
+        footprint_z = max(height_studs, _MIN_FOOTPRINT_STUDS)
+        footprint_x = max(1, round(footprint_z * w / h))
 
     alpha = rgba_image.split()[3]
     alpha_small = alpha.resize((footprint_x, footprint_z), Image.Resampling.LANCZOS)
@@ -175,7 +180,7 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
 
     voxels = np.zeros((footprint_x, height_studs, footprint_z), dtype=bool)
     for y in range(height_studs):
-        voxels[:, y, :] = mask_zx.T  # (footprint_z, footprint_x).T → (footprint_x, footprint_z)
+        voxels[:, y, :] = mask_zx.T  # (footprint_z, footprint_x).T â†’ (footprint_x, footprint_z)
     return voxels
 
 
@@ -185,7 +190,7 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
 
 
 def run(image_path: str, height_studs: int = 10) -> np.ndarray:
-    """Full image pipeline: rembg background removal → silhouette extrusion → voxel grid.
+    """Full image pipeline: rembg background removal â†’ silhouette extrusion â†’ voxel grid.
 
     Uses 2-D alpha-channel extrusion so cartoon/clip-art images produce the correct
     silhouette shape instead of the rectangular blob that TripoSR reconstructs from
