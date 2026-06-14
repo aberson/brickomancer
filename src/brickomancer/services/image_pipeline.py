@@ -180,17 +180,20 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
         hires_x = max(1, round(hires_z * w / h))
 
     alpha = rgba_image.split()[3]
-    alpha_bin = Image.fromarray((np.array(alpha) > 128).astype(np.uint8) * 255)
-    alpha_hires = alpha_bin.resize((hires_x, hires_z), Image.Resampling.LANCZOS)
+    alpha_hires = alpha.resize((hires_x, hires_z), Image.Resampling.LANCZOS)
     mask_hires = np.array(alpha_hires) > 127  # shape (hires_z, hires_x)
 
-    # Use the full hires mask directly as the output. Downsampling via OR-pool
-    # fills the concave gaps between star arms (each ~2px wide at 20px resolution)
-    # into a solid blob when the pool block spans ~3px. Keeping 1:1 resolution
-    # preserves the five-arm silhouette and its concavities.
-    output_x = hires_x
-    output_z = hires_z
+    # Output dimensions proportional to height_studs and image aspect ratio,
+    # matching the gold reference scale (~4-6 studs across at height_studs=5).
+    if w >= h:
+        output_x = max(height_studs, 5)
+        output_z = max(1, round(output_x * h / w))
+    else:
+        output_z = max(height_studs, 5)
+        output_x = max(1, round(output_z * w / h))
 
+    # Threshold at 0.4 preserves narrow concavities between star arms that
+    # OR-pool (any()) would fill when the pool block spans a ~2px gap.
     mask_zx = np.zeros((output_z, output_x), dtype=bool)
     for ti in range(output_z):
         si0 = (ti * hires_z) // output_z
@@ -198,7 +201,8 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
         for tj in range(output_x):
             sj0 = (tj * hires_x) // output_x
             sj1 = max(sj0 + 1, ((tj + 1) * hires_x) // output_x)
-            mask_zx[ti, tj] = mask_hires[si0:si1, sj0:sj1].any()
+            block = mask_hires[si0:si1, sj0:sj1]
+            mask_zx[ti, tj] = block.mean() > 0.4
 
     logger.info(
         "silhouette fill: %.1f%% (%d/%d studs)",
