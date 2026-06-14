@@ -31,7 +31,7 @@ Step markers:
 import os
 from itertools import groupby
 
-from brickomancer.models.brick import BrickPlacement, TILE_PART_IDS
+from brickomancer.models.brick import TILE_PART_IDS, BrickPlacement
 
 # LDraw unit conversion constants
 _STUD_LDU = 20   # 1 stud = 20 LDU in X and Z
