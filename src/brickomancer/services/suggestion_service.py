@@ -110,6 +110,18 @@ def _select_secondary_color(colors: list[ColorMatch], dominant: ColorMatch) -> C
             if best is None or contrast > best_contrast:
                 best_contrast = contrast
                 best = c
+
+    if best is None:
+        for c in colors:
+            if c.color_id != dominant.color_id:
+                h2 = c.hex.lstrip("#")
+                r2, g2, b2 = int(h2[0:2], 16), int(h2[2:4], 16), int(h2[4:6], 16)
+                lightness = (max(r2, g2, b2) + min(r2, g2, b2)) / 510.0
+                contrast = abs(lightness - dom_lightness)
+                if contrast > best_contrast:
+                    best_contrast = contrast
+                    best = c
+
     return best
 
 
