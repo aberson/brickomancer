@@ -95,15 +95,21 @@ def extract_colors(image_path: str) -> list[ColorMatch]:
         list[ColorMatch] sorted by cluster weight (largest cluster first).
     """
     with Image.open(image_path) as raw_img:
-        img = raw_img.convert("RGB")
+        img_rgba = raw_img.convert("RGBA")
 
-    pixels_rgb = np.array(img, dtype=np.float32) / 255.0  # (H, W, 3) in [0, 1]
-    h, w, _ = pixels_rgb.shape
-    n_pixels = h * w
+    arr = np.array(img_rgba, dtype=np.float32)
+    alpha = arr[:, :, 3]
+    subject_mask = alpha > 10  # exclude background pixels removed by rembg
+
+    if subject_mask.any():
+        flat_rgb = arr[subject_mask, :3] / 255.0  # (N, 3) in [0, 1]
+    else:
+        flat_rgb = (arr[:, :, :3] / 255.0).reshape(-1, 3)
+
+    n_pixels = flat_rgb.shape[0]
 
     # Convert to Lab space for perceptually uniform clustering
-    pixels_lab = rgb2lab(pixels_rgb)  # (H, W, 3) in Lab
-    flat_lab = pixels_lab.reshape(n_pixels, 3)  # (N, 3)
+    flat_lab = rgb2lab(flat_rgb.reshape(1, n_pixels, 3)).reshape(n_pixels, 3)  # (N, 3)
 
     k = min(_K_CLUSTERS, n_pixels)
     kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
