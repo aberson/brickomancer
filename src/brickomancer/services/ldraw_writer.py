@@ -1,4 +1,4 @@
-"""LDraw writer — converts BrickPlacements to .ldr file format.
+"""LDraw writer â€” converts BrickPlacements to .ldr file format.
 
 Public API
 ----------
@@ -32,7 +32,9 @@ Step markers:
 
   ``0 !LPUB FADE STEPS ENABLED TRUE`` in the file header instructs LPub3D
   to render previously placed bricks faded/greyed in each step diagram so
-  the current step's new bricks are visually distinct.
+  the current step's new bricks are visually distinct.  ``0 !LPUB FADE STEPS
+  SETUP OPACITY 50`` sets the fade level to 50% so previously placed bricks
+  are clearly lighter than the current step's new bricks.
 """
 
 import os
@@ -135,6 +137,7 @@ def write_ldr(
         f"0 Tier: {tier_name}",
         "",
         "0 !LPUB FADE STEPS ENABLED TRUE",
+        "0 !LPUB FADE STEPS SETUP OPACITY 50",
         "",
         "0 !LPUB INSERT COVER_PAGE",
         "",
