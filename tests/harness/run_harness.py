@@ -49,6 +49,7 @@ ADVISOR_TIMEOUT_S = 240
 DEVELOPER_TIMEOUT_S = 300
 
 _INPUT_IMAGE_DIR = PROJECT_ROOT / "docs" / "example_input_output" / "star" / "input_image"
+_HEIGHT_STUDS = 5
 GOLD_STEP_FINAL_PATH = (
     PROJECT_ROOT / "docs" / "example_input_output" / "star" / "step_output" / "star_step_10.png"
 )
@@ -98,6 +99,10 @@ def _pick_input_image() -> Path:
     return random.choice(candidates)
 
 
+def _pick_height_studs() -> int:
+    return _HEIGHT_STUDS
+
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -114,7 +119,7 @@ log = logging.getLogger("harness")
 # ---------------------------------------------------------------------------
 
 
-def pipeline_executor(iteration_dir: Path, input_image_path: Path) -> dict[str, Any]:
+def pipeline_executor(iteration_dir: Path, input_image_path: Path, height_studs: int) -> dict[str, Any]:
     """Run the full pipeline for one iteration and return iteration state.
 
     Steps:
@@ -135,7 +140,7 @@ def pipeline_executor(iteration_dir: Path, input_image_path: Path) -> dict[str, 
             response = client.post(
                 f"{SERVER_URL}/api/generate/from-image",
                 files={"image": (input_image_path.name, img_fh, "image/jpeg")},
-                data={"height_studs": "8"},
+                data={"height_studs": str(height_studs)},
             )
         response.raise_for_status()
         generate_data: dict[str, Any] = response.json()
@@ -196,6 +201,7 @@ def pipeline_executor(iteration_dir: Path, input_image_path: Path) -> dict[str, 
         "preview_png_path": preview_png_path,
         "pdf_path": str(pdf_path),
         "input_image_path": str(input_image_path),
+        "height_studs": height_studs,
     }
 
 
@@ -673,7 +679,7 @@ def developer_agent(advisor_results: dict[str, Any], iteration: int) -> dict[str
 def _start_server(log_path: Path) -> subprocess.Popen[bytes]:
     """Spawn the uvicorn server and return the Popen handle."""
     os.environ["PATH"] = os.environ.get("PATH", "") + r";C:\Tools\LPub3D"
-    log_fh = log_path.open("wb")
+    log_fh = log_path.open("ab")
     proc = subprocess.Popen(
         [
             "uv",
@@ -765,11 +771,13 @@ def _scores_entry(
     advisor_results: dict[str, Any],
     dev_result: dict[str, Any],
     input_image_name: str | None = None,
+    height_studs: int | None = None,
 ) -> dict[str, Any]:
     return {
         "iteration": iteration,
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         "input_image": input_image_name,
+        "height_studs": height_studs,
         "scores_raw": advisor_results.get("scores_raw", {}),
         "scores_normalized": advisor_results.get("scores_normalized", {}),
         "selected_dimension": dev_result.get("selected_dimension"),
@@ -826,8 +834,13 @@ def main() -> None:
 
             # a) Run pipeline
             input_image_path = _pick_input_image()
-            log.info("Selected input image: %s", input_image_path.name)
-            iteration_state = pipeline_executor(iteration_dir, input_image_path)
+            height_studs = _pick_height_studs()
+            log.info(
+                "Selected input image: %s, height_studs: %d",
+                input_image_path.name,
+                height_studs,
+            )
+            iteration_state = pipeline_executor(iteration_dir, input_image_path, height_studs)
 
             # b) Run advisors
             advisor_results = advisor_engine(iteration_dir, iteration_state)
@@ -848,6 +861,7 @@ def main() -> None:
                         advisor_results,
                         {"test_result": "QUALITY_GATE_MET"},
                         input_image_path.name,
+                        height_studs,
                     )
                 )
                 iterations_completed += 1
@@ -857,8 +871,18 @@ def main() -> None:
             dev_result = developer_agent(advisor_results, i)
 
             # e) Append scores
-            _append_scores(_scores_entry(i, advisor_results, dev_result, input_image_path.name))
+            _append_scores(_scores_entry(i, advisor_results, dev_result, input_image_path.name, height_studs))
             iterations_completed += 1
+
+            # f) Restart server after a commit so next iteration sees updated code
+            if dev_result.get("test_result") == "PASS_COMMITTED" and i < args.iterations:
+                log.info("Code committed — restarting server to pick up changes…")
+                _terminate_server(proc)
+                proc = _start_server(SERVER_LOG)
+                ready = _wait_for_server()
+                if not ready:
+                    log.error("Server failed to restart after commit — aborting.")
+                    break
 
     finally:
         if proc is not None:

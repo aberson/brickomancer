@@ -117,4 +117,4 @@ scripts/
 
 ## Status
 
-**Gold dataset + 8th advisor** — Harness input switched from cake.jpg to cartoon_star gold dataset (`docs/example_input_output/star/`); per-iteration random input selection from multi-image pool; new `reference_fidelity` advisor compares generated build against gold final step (`star_step_10.png`); `scores.jsonl` now records which input image drove each iteration. 311 tests passing, 0 type errors, 0 lint violations.
+**Harness calibration + run 2** — Fixed `height_studs` to 5 (matching gold ~5-high star); server now restarts after each committed iteration so code changes take effect within the same run (not deferred to the next). Run 2 landed 3 commits: voxel axis transpose so star face aligns to the XZ brick-layer plane, tile Y-coordinate fix so surface tiles sit flush, and subject-color filter so yellow star drives color extraction instead of white background. 311 tests passing, 0 type errors, 0 lint violations.

@@ -627,3 +627,48 @@ Commit: 19b840a. 303 unit tests passing, 0 type errors, 0 lint violations.
 | Adding more input images | Drop any `.jpg/.jpeg/.png/.webp` into `docs/example_input_output/star/input_image/` — `_pick_input_image()` auto-discovers them, no code change needed |
 | Gold reference is fixed | `GOLD_STEP_FINAL_PATH` always points to `star_step_10.png` regardless of which input image was selected; both star inputs are expected to produce a star-shaped build |
 | `reference_fidelity` source files | Maps to `image_pipeline.py` + `brick_packer.py` in `DIMENSION_SOURCE_FILES` — the shape generation layer is where star-shape fidelity improvements live |
+
+---
+
+## 13. Harness Calibration + Run 2 (2026-06-13)
+
+**311/311 tests passing. Zero type errors. Zero lint violations.**
+
+### What was built
+
+- **`height_studs` pinned to 5** — replaced `_HEIGHT_STUDS_RANGE = (4, 6)` random range with `_HEIGHT_STUDS = 5` constant. Gold reference star build is ~5 bricks tall; randomizing height introduces scoring noise the developer agent cannot fix through code changes. Image randomization kept (2 inputs); height is deterministic.
+- **Server restarts after each PASS_COMMITTED** — previously the server ran for the full N iterations with stale code; all iterations in a run were scoring the pre-run baseline. Now `_terminate_server` + `_start_server` + `_wait_for_server` run between iterations whenever a commit lands. Server log opened in append mode (`"ab"`) so restart logs are preserved.
+- **`height_studs` parameter threaded through** — `pipeline_executor(iteration_dir, input_image_path, height_studs)` signature; returned in state dict; recorded in `scores.jsonl` as `height_studs` field.
+- **PowerShell launch required** — `CLAUDE_CODE_OAUTH_TOKEN` is a Windows user-level env var that does not propagate to Bash subshells. First run attempted via Bash produced 3 `SKIPPED_NO_TOKEN` iterations before being aborted and relaunched via PowerShell with explicit `[System.Environment]::GetEnvironmentVariable(...)` load.
+
+### Run 2 results (5 iterations, star gold dataset)
+
+3 commits landed, 1 SKIPPED_REVERT, 1 SKIPPED_TIMEOUT.
+
+| Commit | Dimension | Change |
+|---|---|---|
+| 8bd95b3 | shape_fidelity | Transpose voxel axes (0,2,1): star face (XY in TripoSR output) becomes XZ brick-layer footprint instead of tall column |
+| 81fd8e2 | build_stability | Fix tile Y in `ldraw_writer._to_ldu`: tiles are 8 LDU tall, Y = `y*-24+16` not `y*-24` |
+| bd1b576 | color_match | Add `_select_subject_color()` in suggestion_service: skips near-white/near-gray colors (sat ≤ 0.15, lightness ≥ 0.35) so yellow star body drives color extraction |
+
+One SKIPPED_REVERT: `color_service.py` white-background filter broke `test_extract_colors_cake_dominant_colors` (test expects White in cake.jpg colors; filter removed it). The fix was attempted twice — dev agent needs to update the test alongside the change.
+
+### Key insight: scores in a run reflect server-start-time code
+
+Because the server doesn't hot-reload Python modules, all iterations in a run evaluate whatever code was committed *before* `_start_server`. The server-restart fix (above) changes this: from now on, each PASS_COMMITTED iteration's changes are live for the next iteration. The 3 commits from run 2 were first evaluated only in run 3+.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `tests/harness/run_harness.py` | `_HEIGHT_STUDS = 5` constant; `_pick_height_studs()` returns it; server restart block after PASS_COMMITTED; `_start_server` log append mode; `height_studs` in `_scores_entry` |
+| `tests/harness/test_pipeline_executor.py` | All `pipeline_executor` calls updated to pass `height_studs=5`; key-set assertion includes `height_studs` |
+
+### Fresh context notes for section 13
+
+| Issue | Detail |
+|---|---|
+| Token not inherited by Bash | Always launch harness from PowerShell with explicit `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN","User")` before starting |
+| Server restart cost | TripoSR reloads model (~30–60s) on each server start; one restart per committed iteration is the unavoidable cost of hot-reloading |
+| `test_extract_colors_cake_dominant_colors` blocker | Any change that filters white from color_service must also update this test. Dev agent needs explicit instruction to update the test alongside the fix |
+| Run 2 scores low overall | avg_raw ~2.5–3.1 across 8 dims; shape_fidelity and reference_fidelity stuck at 1. Root cause: TripoSR reconstructs flat cartoon star as a blob, not a 5-pointed shape. Axis transpose helps orientation but not reconstruction quality. Scores will improve as run 2 commits are evaluated in future runs. |
