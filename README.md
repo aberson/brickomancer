@@ -116,4 +116,4 @@ scripts/
 
 ## Status
 
-**Harness run 3 in progress** — Replaced TripoSR with 2D alpha-channel silhouette extrusion (`image_pipeline._extrude_silhouette`): rembg alpha mask → stud-grid resize → vertical extrusion. Produces star-shaped voxel grid instead of rectangular blob. Run 2 previously landed: voxel axis transpose, tile Y-coordinate fix, subject-color filter (yellow star). 313 tests passing, 0 type errors, 0 lint violations.
+**Harness run 4 complete** — Landed Y-layer step sequencing (`instruction_clarity`), trailing `0 STEP` per-step for LPub3D multi-page rendering, LDView camera-angle preset (Latitude 30°, Longitude 45°), developer timeout 300→600s. Prior runs landed: 2D silhouette extrusion, masonry offset, axis transpose, tile Y fix, subject-color filter. 313 tests passing, 0 type errors, 0 lint violations.

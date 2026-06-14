@@ -79,7 +79,7 @@ brickomancer/
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes + three harness runs (2026-06-13/14). Harness fully operational: 8/8 advisors (color_match replaces part_variety; reference_fidelity added using gold dataset star), weighted developer-agent loop, pytest gate (unit tests only), avg-raw quality gate (≥ 8.0). Top-surface bricks tile-smoothed via `_apply_surface_tiles()` (TILE_PART_IDS in brick.py). Desktop launcher at `scripts/run_harness.bat`. `/run-harness` skill for one-command prep + launch + monitoring. 313 unit tests passing, 0 type errors, 0 lint violations. Gold dataset: `docs/example_input_output/star/` (cartoon_star.jpg + cartoon_star2.png inputs + 10 gold step PNGs); harness uses `_HEIGHT_STUDS = 5` (matches gold reference ~5-high star). Server restarts after each PASS_COMMITTED so code changes take effect within the same run.
+Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes + four harness runs (2026-06-13/14). Harness fully operational: 8/8 advisors (color_match replaces part_variety; reference_fidelity added using gold dataset star), weighted developer-agent loop, pytest gate (unit tests only), avg-raw quality gate (≥ 8.0). Top-surface bricks tile-smoothed via `_apply_surface_tiles()` (TILE_PART_IDS in brick.py). Desktop launcher at `scripts/run_harness.bat`. `/run-harness` skill for one-command prep + launch + monitoring. 313 unit tests passing, 0 type errors, 0 lint violations. Gold dataset: `docs/example_input_output/star/` (cartoon_star.jpg + cartoon_star2.png inputs + 10 gold step PNGs); harness uses `_HEIGHT_STUDS = 5` (matches gold reference ~5-high star). Server restarts after each PASS_COMMITTED so code changes take effect within the same run.
 
 **Committed improvements to date:**
 - 8bd95b3: axis transpose (star face → XZ plane)
@@ -87,8 +87,10 @@ Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build 
 - bd1b576: subject-color filter (yellow star over white background)
 - ea0f2d0: masonry offset on odd brick layers (build stability)
 - 96ffeb8: replaced TripoSR with 2D silhouette extrusion — rembg alpha mask → stud-grid resize → vertical extrusion gives star-shaped voxel grid instead of rectangular blob; updated test_image_pipeline.py (311 → 313 tests)
+- 6d67628: Y-layer-first step sequencing in ldraw_writer — each vertical layer becomes its own build step (instruction_clarity)
+- acf8ca6: trailing `0 STEP` after every step including the last (LPub3D multi-page rendering); tests updated; developer timeout 300→600s
 
-**Harness image-passing note:** `claude -p` does not support `--image`. Images (preview PNG, input image) are passed as absolute paths in the prompt with "Use your Read tool to view this image." Same pattern used by PDF advisors. LDR content truncated to 400 lines before embedding. Advisor timeout 240s, developer timeout 300s.
+**Harness image-passing note:** `claude -p` does not support `--image`. Images (preview PNG, input image) are passed as absolute paths in the prompt with "Use your Read tool to view this image." Same pattern used by PDF advisors. LDR content truncated to 400 lines before embedding. Advisor timeout 240s, developer timeout 600s.
 
 **`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as Windows user environment variable (not `.env` file). Inherited by the desktop `.bat` launcher automatically. When running from PowerShell/Bash tools, load it explicitly: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`. The Bash tool does NOT inherit Windows user env vars — always launch harness from PowerShell.
 

@@ -705,4 +705,47 @@ Commit: `96ffeb8`
 | `src/brickomancer/services/brick_packer.py` | Masonry offset on odd layers (ea0f2d0) |
 | `src/brickomancer/services/image_pipeline.py` | Add `_extrude_silhouette()`; `run()` now uses rembg → silhouette extrusion; removed TripoSR call; removed `import tempfile` (96ffeb8) |
 | `tests/test_image_pipeline.py` | Remove TripoSR-specific tests; add `_extrude_silhouette` unit tests; update `run()` tests to RGBA mocks (96ffeb8) |
+
+---
+
+## Session notes — 2026-06-14 (run 4)
+
+### Run 4 results (5 iterations, star gold dataset)
+
+1 commit landed, 1 SKIPPED_TIMEOUT, 1 SKIPPED_PARSE_ERROR, 2 SKIPPED_REVERT.
+
+| Iter | Commit | Dimension | Result | Change |
+|---|---|---|---|---|
+| 1 | — | reference_fidelity | SKIPPED_TIMEOUT | Developer agent timed out (300s limit) |
+| 2 | — | aesthetics | SKIPPED_PARSE_ERROR | Developer agent output unparseable |
+| 3 | — | pdf_completeness | SKIPPED_REVERT | LPub3D meta-commands (cover page + BOM + trailing STEP) — broke 3 step-marker tests |
+| 4 | 6d67628 | instruction_clarity | PASS_COMMITTED | Y-layer-first step sequencing: `sequence_steps` groups by voxel Y-layer so each layer is a distinct build step |
+| 5 | — | build_stability | SKIPPED_TIMEOUT | Developer agent timed out (300s limit) |
+
+### Post-run 4 manual fixes
+
+Two issues observed across run 3 and run 4 were fixed manually and committed as `acf8ca6`:
+
+**Trailing `0 STEP` contract (`acf8ca6`):** `write_ldr` now emits `0 STEP` after every step including the last, so LPub3D generates a separate page per build step. Three unit tests updated to match new contract (`test_no_trailing_step_marker` → `test_trailing_step_marker_present`; step counts corrected). Developer agent had tried this 3 times across runs 3–4 and been blocked by the old test assertions each time.
+
+**Developer timeout raised 300→600s (`acf8ca6`):** Two iterations timed out at 300s in run 4. Timeout raised to 600s to reduce SKIPPED_TIMEOUT rate for complex dimensions (reference_fidelity, build_stability).
+
+**LDView camera angles (folded into repo-update commit):** `-Latitude=30 -Longitude=45` added to `subprocess_utils.run_ldview` args for better 3D perspective in preview PNGs. Improves aesthetics advisor scoring.
+
+### Files changed (run 4 + post-run fixes)
+
+| File | Change |
+|---|---|
+| `src/brickomancer/services/ldraw_writer.py` | Y-layer-first step sequencing in `sequence_steps`; trailing `0 STEP` after every step (6d67628, acf8ca6) |
+| `src/brickomancer/utils/subprocess_utils.py` | LDView camera preset: `-Latitude=30 -Longitude=45` |
+| `tests/test_brick_packer.py` | Updated 3 step-marker tests to expect trailing STEP; renamed `test_no_trailing_step_marker` → `test_trailing_step_marker_present` (acf8ca6) |
+| `tests/harness/run_harness.py` | `DEVELOPER_TIMEOUT_S` 300→600 (acf8ca6) |
+
+### Fresh context notes for run 4
+
+| Issue | Detail |
+|---|---|
+| Step-marker test wall resolved | `test_trailing_step_marker_present` (was `test_no_trailing_step_marker`) now expects `count == 1`; dev agent can freely add trailing STEPs |
+| Developer timeout | Now 600s — timeouts should be rare; if still hitting them, check advisor prompt complexity for that dimension |
+| Recurring pdf_completeness target | Dev agent keeps adding LPub3D meta-commands (cover page, BOM); these may now pass tests since trailing STEP is allowed |
 | Run 2 scores low overall | avg_raw ~2.5–3.1 across 8 dims; shape_fidelity and reference_fidelity stuck at 1. Root cause: TripoSR reconstructs flat cartoon star as a blob, not a 5-pointed shape. Axis transpose helps orientation but not reconstruction quality. Scores will improve as run 2 commits are evaluated in future runs. |

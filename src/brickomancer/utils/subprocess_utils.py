@@ -103,6 +103,8 @@ def run_ldview(ldr_path: str, output_png: str) -> None:
         "-SaveWidth=400",
         "-SaveHeight=300",
         "-AutoCrop=1",
+        "-Latitude=30",
+        "-Longitude=45",
     ]
     # Always pass the LDraw library dir — even LPub3D's bundled LDView needs it
     # when invoked as a standalone subprocess (it doesn't auto-detect its own parts dir).
