@@ -119,7 +119,9 @@ log = logging.getLogger("harness")
 # ---------------------------------------------------------------------------
 
 
-def pipeline_executor(iteration_dir: Path, input_image_path: Path, height_studs: int) -> dict[str, Any]:
+def pipeline_executor(
+    iteration_dir: Path, input_image_path: Path, height_studs: int
+) -> dict[str, Any]:
     """Run the full pipeline for one iteration and return iteration state.
 
     Steps:
@@ -558,6 +560,12 @@ def developer_agent(advisor_results: dict[str, Any], iteration: int) -> dict[str
         f"Task: make EXACTLY ONE targeted code change to improve the \"{dimension}\" dimension.\n"
         f"Study the findings, then make a single focused improvement in one source file.\n"
         f"Do not add explanatory comments. Do not modify unrelated code.\n\n"
+        f"\n\nAXIS CONVENTION — DO NOT CHANGE:\n"
+        f"  voxel_grid shape is (X, Y, Z) where Y is the vertical build axis (brick layers).\n"
+        f"  _extrude_silhouette MUST return (footprint_x, height_studs, footprint_z).\n"
+        f"  Any change that makes shape[1] != height_studs will fail three existing tests.\n"
+        f"  The tall narrow column symptom is caused by a sparse voxel grid from rembg,\n"
+        f"  NOT by the wrong axis — do not attempt axis changes.\n"
         f"Output ONLY valid JSON on a single line:\n"
         f'  {{"changes": [{{"file_path": "<path>", "content": "<complete file>"}}], '
         f'"summary": "<one sentence>"}}\n\n'
@@ -871,7 +879,10 @@ def main() -> None:
             dev_result = developer_agent(advisor_results, i)
 
             # e) Append scores
-            _append_scores(_scores_entry(i, advisor_results, dev_result, input_image_path.name, height_studs))
+            entry = _scores_entry(
+                i, advisor_results, dev_result, input_image_path.name, height_studs
+            )
+            _append_scores(entry)
             iterations_completed += 1
 
             # f) Restart server after a commit so next iteration sees updated code
