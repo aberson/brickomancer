@@ -54,7 +54,7 @@ _LPUB3D_LDVIEW_CANDIDATES: list[str] = [
     r"C:\Program Files\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe",
     r"C:\Program Files (x86)\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe",
 ]
-# LPub3D also ships its own LDraw parts library — pass it to standalone LDView.
+# LPub3D also ships its own LDraw parts library â€” pass it to standalone LDView.
 _LPUB3D_LDRAW_CANDIDATES: list[str] = [
     r"C:\Tools\LPub3D\ldraw",
     r"C:\Program Files\LPub3D\ldraw",
@@ -106,7 +106,7 @@ def run_ldview(ldr_path: str, output_png: str) -> None:
         "-Latitude=65",
         "-Longitude=45",
     ]
-    # Always pass the LDraw library dir — even LPub3D's bundled LDView needs it
+    # Always pass the LDraw library dir â€” even LPub3D's bundled LDView needs it
     # when invoked as a standalone subprocess (it doesn't auto-detect its own parts dir).
     ldraw_dir = _find_ldraw_dir()
     if ldraw_dir:
@@ -143,11 +143,11 @@ def run_lpub3d(ldr_path: str, output_dir: str) -> str:
         raise RuntimeError(_LPUB3D_NOT_FOUND_MSG)
 
     # LPub3D writes the PDF next to the input .ldr file as <basename>_<dpi>_DPI.pdf.
-    # The -pe pdf flag triggers PDF export; there is no -o output-dir flag.
+    # The -x flag activates headless export mode; -pe pdf selects PDF output.
     ldr_dir = os.path.dirname(os.path.abspath(ldr_path))
     try:
         result = subprocess.run(
-            [lpub3d_cmd, "-pe", "pdf", ldr_path],
+            [lpub3d_cmd, "-x", "-pe", "pdf", ldr_path],
             capture_output=True,
             text=True,
             timeout=120,
