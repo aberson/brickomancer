@@ -474,6 +474,7 @@ automatically without running the full 30–60s TripoSR pipeline.
 - **Produces:** `src/brickomancer/services/brick_packer.py` — delete lines 274-349 (4-phase masonry + `scan_z_first` / `starts` / `start_x` loop); add per-Z-row starter pre-pass for `y % 2 == 1` layers; simplify inner scan to standard `for x in range(X): for z in range(Z)` with single-start orientation loop; update `pack()` docstring bullet. `tests/test_brick_packer.py` — add `TestMasonryInterlocking` class with 4 tests: (1) even/odd layers have different X-seam sets on a 6×2×2 slab; (2) odd layer has a multi-stud brick starting at x=1; (3) 8×4×2 arm has no all-1×1 layer (no z-offset degeneration); (4) layers 0/2 match, 1/3 match, 0 differs from 1 (A/B/A/B pattern)
 - **Done when:** `uv run pytest -q --ignore=tests/integration` passes (320 tests expected); new `TestMasonryInterlocking` tests all pass including `test_odd_layer_has_multi_stud_brick_starting_at_x1` which asserts odd-layer first bricks start at x=1 (seam offset active)
 - **Depends on:** 18
+- **Status:** DONE (2026-06-15)
 
 ---
 
