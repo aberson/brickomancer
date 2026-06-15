@@ -354,6 +354,70 @@ class TestWriteLdr:
             content = open(path, encoding="utf-8").read()
             assert content.count("0 STEP") == 2
 
+    def test_fade_steps_in_header(self):
+        """FADE_STEPS meta commands must appear in header before any brick line."""
+        bricks = [_make_bp(0, 0, 0)]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "fade.ldr")
+            write_ldr(bricks, path)
+            lines = open(path, encoding="utf-8").read().splitlines()
+            # Find position of FADE_STEPS and first brick line
+            fade_idx = next(
+                (i for i, ln in enumerate(lines) if "FADE_STEPS ENABLED TRUE" in ln), None
+            )
+            first_brick_idx = next(
+                (i for i, ln in enumerate(lines) if ln.startswith("1 ")), None
+            )
+            assert fade_idx is not None, "FADE_STEPS ENABLED TRUE not found"
+            assert first_brick_idx is not None, "No brick line found"
+            assert fade_idx < first_brick_idx, (
+                "FADE_STEPS must appear before first brick line"
+            )
+            # Both FADE_STEPS lines must be present
+            content = "\n".join(lines)
+            assert "0 !LPUB FADE_STEPS ENABLED TRUE" in content
+            assert "0 !LPUB FADE_STEPS SETUP OPACITY 50" in content
+
+    def test_cover_page_after_first_step_only(self):
+        """INSERT COVER_PAGE must appear once, after the first 0 STEP, not before bricks."""
+        # 17 bricks → 3 steps; COVER_PAGE should only follow step 0
+        bricks = [_make_bp(i, 0, 0) for i in range(17)]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "cover.ldr")
+            write_ldr(bricks, path)
+            lines = open(path, encoding="utf-8").read().splitlines()
+            cover_indices = [i for i, ln in enumerate(lines) if "INSERT COVER_PAGE" in ln]
+            step_indices = [i for i, ln in enumerate(lines) if ln.strip() == "0 STEP"]
+            assert len(cover_indices) == 1, "COVER_PAGE must appear exactly once"
+            # COVER_PAGE must come after the first STEP marker
+            assert cover_indices[0] > step_indices[0], (
+                "COVER_PAGE must be after the first 0 STEP"
+            )
+            # COVER_PAGE must not be before any brick line
+            first_brick_idx = next(
+                (i for i, ln in enumerate(lines) if ln.startswith("1 ")), None
+            )
+            assert cover_indices[0] > first_brick_idx, (
+                "COVER_PAGE must not appear before brick lines"
+            )
+
+    def test_insert_model_after_bom(self):
+        """INSERT MODEL must appear after INSERT BOM at the tail."""
+        bricks = [_make_bp(0, 0, 0)]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "model.ldr")
+            write_ldr(bricks, path)
+            lines = open(path, encoding="utf-8").read().splitlines()
+            bom_idx = next(
+                (i for i, ln in enumerate(lines) if "INSERT BOM" in ln), None
+            )
+            model_idx = next(
+                (i for i, ln in enumerate(lines) if "INSERT MODEL" in ln), None
+            )
+            assert bom_idx is not None, "INSERT BOM not found"
+            assert model_idx is not None, "INSERT MODEL not found"
+            assert model_idx > bom_idx, "INSERT MODEL must come after INSERT BOM"
+
 
 # ---------------------------------------------------------------------------
 # Integration: pack → write_ldr round-trip

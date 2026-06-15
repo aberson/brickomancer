@@ -26,9 +26,14 @@ Line format:
 
 Step markers:
   ``0 STEP`` is inserted after every step including the last, so LPub3D
-  renders each step as a separate page.  ``0 !LPUB INSERT BOM`` is placed
-  after the final ``0 STEP`` so LPub3D sees it at a page boundary and
-  renders a consolidated parts-inventory page.
+  renders each step as a separate page.  ``0 !LPUB INSERT COVER_PAGE`` is
+  emitted after the first ``0 STEP`` (page boundary required; must not be in
+  the header before any bricks).  ``0 !LPUB INSERT BOM`` is placed after the
+  final ``0 STEP`` so LPub3D renders a consolidated parts-inventory page.
+  ``0 !LPUB INSERT MODEL`` follows immediately after, rendering the completed
+  model on the last page.  ``0 !LPUB FADE_STEPS ENABLED TRUE`` and
+  ``0 !LPUB FADE_STEPS SETUP OPACITY 50`` are emitted in the header (before
+  the first brick line) as global LPub3D configuration.
 """
 
 import os
@@ -109,9 +114,14 @@ def write_ldr(
     Bricks are grouped by Y-layer (ascending voxel layer) so each layer
     is a distinct build step.  Large layers are split into sub-steps of 8.
     A ``0 STEP`` marker is inserted after every step, including the last,
-    so LPub3D renders each step as a separate page.  A ``0 !LPUB INSERT BOM``
-    meta command is appended after the final ``0 STEP`` so LPub3D sees it at
-    a page boundary and renders a consolidated parts-inventory page.
+    so LPub3D renders each step as a separate page.
+
+    LPub3D meta commands emitted:
+    - Header: ``0 !LPUB FADE_STEPS ENABLED TRUE`` and
+      ``0 !LPUB FADE_STEPS SETUP OPACITY 50`` (global config, before bricks).
+    - After first ``0 STEP`` only: ``0 !LPUB INSERT COVER_PAGE``.
+    - After final ``0 STEP``: ``0 !LPUB INSERT BOM`` then
+      ``0 !LPUB INSERT MODEL``.
 
     Args:
         placements: list[BrickPlacement] to write.
@@ -129,6 +139,8 @@ def write_ldr(
         f"0 Name: {filename}",
         "0 Author: Brickomancer",
         f"0 Tier: {tier_name}",
+        "0 !LPUB FADE_STEPS ENABLED TRUE",
+        "0 !LPUB FADE_STEPS SETUP OPACITY 50",
         "",
     ]
 
@@ -136,8 +148,10 @@ def write_ldr(
         for bp in step_bricks:
             lines.append(_brick_line(bp))
         lines.append("0 STEP")
+        if step_idx == 0:
+            lines.append("0 !LPUB INSERT COVER_PAGE")
 
-    lines.extend(["", "0 !LPUB INSERT BOM"])
+    lines.extend(["", "0 !LPUB INSERT BOM", "0 !LPUB INSERT MODEL"])
 
     parent = os.path.dirname(os.path.abspath(output_path))
     if parent:
