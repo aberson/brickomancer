@@ -844,3 +844,102 @@ Flat output directory: `iteration_N/` subdirectories removed. All per-iteration 
 | pdf_completeness still 0 post-fix | Even after removing malformed FADE header, iter 5 scored pdf_completeness: 0 and instruction_clarity: 1. PDF is 1186 bytes — consistent with previous runs. Root cause unclear; advisors may have strict page-content requirements. |
 | birefnet model test break | Dev agent tried birefnet-general switch (iter 1) but `test_remove_background_returns_rgba_image` failed. Test expects RGBA output; birefnet integration changed the return type. If retrying, fix the test alongside the implementation. |
 | Flat output naming | Files: `i{n}_{HHmm}_instructions.pdf`, `i{n}_{HHmm}_preview.png`, `i{n}_{HHmm}_advisor_reports.json` — all in `tests/harness/runs/`. |
+
+---
+
+## Harness run 8 (2026-06-14)
+
+**Summary:** 20 iterations, avg raw 3.875→5.125. 15 committed, 1 reverted, 4 skipped (2 timeout, 2 parse-error). Major wins: pdf_completeness 0→5, instruction_clarity 1→5, color_match 7→8. First run to reach avg raw > 5.
+
+| Iter | SHA | Dimension | Result | Notes |
+|---|---|---|---|---|
+| 1 | ae2ae50 | pdf_completeness | PASS | Added `0 !LPUB INSERT COVER_PAGE` meta command |
+| 2 | da50272 | build_stability | PASS | Z-outer/X-inner alternating scan on odd layers |
+| 3 | 74687b0 | color_match | PASS | Mask transparent pixels before KMeans (subject-only clustering) |
+| 4 | 3102b07 | reference_fidelity | PASS | OR-pool to compact output footprint (~7 studs for height=5) |
+| 5 | — | reference_fidelity | SKIPPED_TIMEOUT | — |
+| 6 | — | color_match | SKIPPED_TIMEOUT | — |
+| 7 | eeb212d | instruction_clarity | PASS | `!LPUB FADE_STEPS ENABLED TRUE` (correct TRUE arg this time) |
+| 8 | b015f53 | pdf_completeness | PASS | Fixed `COVER_PAGE` → `COVER_PAGE` (underscore syntax) |
+| 9 | d9e5f18 | color_match | PASS | Cache LEGO palette Lab values on first use |
+| 10 | a2c881b | aesthetics | PASS | LDView latitude 45°→65° |
+| 11 | bbd792b | instruction_clarity | PASS | `!LPUB FADE_STEPS SETUP OPACITY 50` |
+| 12 | — | pdf_completeness | SKIPPED_REVERT | Added `0 STEP` after `COVER_PAGE` — broke step-marker tests |
+| 13 | c1c0e3f | instruction_clarity | PASS | Added `0 !LPUB INSERT MODEL` final-page command |
+| 14 | 876fadb | shape_fidelity | PASS | Eliminated OR-pool downsampling (full 20-stud mask) |
+| 15 | 45974b5 | instruction_clarity | PASS | Added `!LPUB HIGHLIGHT_STEP ENABLED TRUE` |
+| 16 | dfb2428 | shape_fidelity | PASS | Alpha threshold 32→127 (majority-fill rule) |
+| 17 | 254af14 | instruction_clarity | PASS | Fixed `FADE_STEPS`/`HIGHLIGHT_STEP` syntax (underscores) |
+| 18 | — | shape_fidelity | SKIPPED_PARSE_ERROR | — |
+| 19 | f50d0c8 | color_match | PASS | Secondary color by max lightness contrast |
+| 20 | — | build_stability | SKIPPED_PARSE_ERROR | — |
+
+### Files changed (run 8)
+
+| File | Change |
+|---|---|
+| `src/brickomancer/services/ldraw_writer.py` | COVER_PAGE, FADE_STEPS, HIGHLIGHT_STEP, INSERT MODEL meta commands; alpha threshold; OR-pool removal |
+| `src/brickomancer/services/image_pipeline.py` | Eliminated hires-to-output downsampling |
+| `src/brickomancer/services/color_service.py` | Transparent-pixel masking before KMeans; Lab palette cache |
+| `src/brickomancer/services/suggestion_service.py` | Secondary color by max lightness contrast |
+| `src/brickomancer/utils/subprocess_utils.py` | LDView latitude 45°→65° |
+| `src/brickomancer/services/brick_packer.py` | Z-outer/X-inner alternating scan |
+
+---
+
+## Harness run 9 + oscillation fix (2026-06-14)
+
+**Summary:** 20 iterations, avg raw 5.125→3.375. Significant regression. Root cause: developer agents operate without history, so each agent independently diagnosed "blank PDF" and removed the LPub3D meta commands that run 8 had added (COVER_PAGE, FADE_STEPS, HIGHLIGHT_STEP, INSERT MODEL). After undo-and-redo oscillation the codebase ended back near the run-7 baseline.
+
+| Iter | Result | Dimension | Notes |
+|---|---|---|---|
+| 1 | PASS | pdf_completeness | Removed `COVER_PAGE` as "causing blank pages" |
+| 2 | PASS | instruction_clarity | Removed FADE_STEPS and HIGHLIGHT_STEP as "causing blank pages" |
+| 3 | PASS | color_match | Color fallback for non-subject colors |
+| 4 | PASS | reference_fidelity | Output footprint proportional to height_studs + aspect ratio |
+| 5 | PASS | color_match | Removed `_is_subject_color` filter for secondary color |
+| 6 | PASS | instruction_clarity | Removed `INSERT MODEL` as "unrecognized directive" |
+| 7 | PASS | pdf_completeness | Added `-x` flag to LPub3D invocation |
+| 8 | PASS | color_match | `_K_CLUSTERS` 8→12 |
+| 9 | PASS | build_stability | Swap masonry starts order |
+| 10 | PASS | shape_fidelity | Minimum footprint 5→10 studs |
+| 11 | PASS | pdf_completeness | LPub3D cwd set to installation directory |
+| 12 | PASS | aesthetics | LDView latitude 65°→35° |
+| 13 | PASS | color_match | `_K_CLUSTERS` 12→6 |
+| 14 | SKIPPED_REVERT | shape_fidelity | Min footprint 10→20 studs |
+| 15 | PASS | build_stability | 4-period masonry cycle |
+| 16 | PASS | reference_fidelity | Min footprint 10→5 studs |
+| 17 | SKIPPED_PARSE_ERROR | shape_fidelity | — |
+| 18 | SKIPPED_REVERT | technical_validity | LDraw part origin centering broke step-marker tests |
+| 19 | PASS (d802978) | shape_fidelity | Eliminated downsampling again (same as run 8 iter 14) |
+| 20 | SKIPPED_REVERT | pdf_completeness | `0 STEP` after `INSERT BOM` broke step-marker tests |
+
+### Oscillation root cause
+
+Each developer agent is a fresh `claude -p` subprocess with no memory of prior iterations. When advisors report "blank PDF," the agent scans the file, sees recently-added meta commands, and reasonably concludes they're the bug — removing them. The next run adds them back. This cycle repeats indefinitely without external history.
+
+### Fix: 4 developer-agent robustness improvements (bcb4382)
+
+| # | Improvement | What it does |
+|---|---|---|
+| 1 | **History injection** | Last 10 `scores.jsonl` rows prepended to every developer prompt. Agent sees each prior attempt (committed ✓ / reverted ✗) and is forbidden from repeating reverted approaches or undoing committed ones. |
+| 2 | **LPub3D mini-reference** | Block of exact meta-command syntax injected for `pdf_completeness`, `instruction_clarity`, `technical_validity`, `build_stability` dimensions. Covers correct placement (header vs. after STEP) and the caution about combining multiple commands. |
+| 3 | **Parse-error retry** | On unparseable JSON response, retry once with a tight re-prompt before marking SKIPPED_PARSE_ERROR. |
+| 4 | **Test-failure retry** | On pytest gate failure, send the failing test output back to the developer agent and retry once; only reverts if the retry also fails. |
+
+### Files changed (run 9 + fix)
+
+| File | Change |
+|---|---|
+| `tests/harness/run_harness.py` | `_build_history_context()` helper; `LPUB3D_META_REFERENCE` constant; history + LPub3D reference injected into developer prompt; parse-error retry loop; test-failure retry loop |
+| `tests/harness/test_developer_agent.py` | Updated `test_revert_path` mock call count (3→4); added `test_revert_path_fix_retry_success` |
+
+### Fresh context notes for run 9
+
+| Issue | Detail |
+|---|---|
+| Oscillation stopped | History injection means run 10 agents will see "COMMITTED ✓ FADE_STEPS ENABLED TRUE" and "COMMITTED ✓ HIGHLIGHT_STEP" in their context and will not remove them. |
+| Current state is degraded | pdf_completeness=0, instruction_clarity=1 — back near run-7 baseline. Run 10 will likely spend first few iterations re-adding the LPub3D meta commands (now guided by the mini-reference). |
+| shape_fidelity stuck | Has been targeted ~10 times, never exceeded 5. Contradictory approaches (OR-pool / no-pool / threshold / 5-stud / 10-stud / 20-stud) cycle without convergence. Needs human diagnosis — see items 5–6 in the oscillation-fix discussion. |
+| build_stability stuck | Similar pattern — multiple masonry approaches tried (Z-scan, swap starts, 4-period). Score returns to 2 after each. |
+| 316 unit tests passing | +1 from `test_revert_path_fix_retry_success` (bcb4382). |

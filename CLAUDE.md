@@ -79,32 +79,46 @@ brickomancer/
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes + seven harness runs (2026-06-13/14). Harness fully operational: 8/8 advisors (color_match replaces part_variety; reference_fidelity added using gold dataset star), weighted developer-agent loop, pytest gate (unit tests only), avg-raw quality gate (≥ 8.0). Top-surface bricks tile-smoothed via `_apply_surface_tiles()` (TILE_PART_IDS in brick.py). Desktop launcher at `scripts/run_harness.bat`. `/run-harness` skill for one-command prep + launch + monitoring. 315 unit tests passing, 0 type errors, 0 lint violations. Gold dataset: `docs/example_input_output/star/` (cartoon_star.jpg + cartoon_star2.png inputs + 10 gold step PNGs); harness uses `_HEIGHT_STUDS = 5` (matches gold reference ~5-high star). Server restarts after each PASS_COMMITTED so code changes take effect within the same run. Harness output is flat: all per-iteration files (PDF, preview, advisor_reports) written to `tests/harness/runs/` with prefix `i{n}_{HHmm}_`.
+Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes + nine harness runs (2026-06-13/14/15). Harness fully operational: 8/8 advisors (color_match replaces part_variety; reference_fidelity added using gold dataset star), weighted developer-agent loop, pytest gate (unit tests only), avg-raw quality gate (≥ 8.0). 316 unit tests passing, 0 type errors, 0 lint violations.
 
-**Committed improvements to date:**
+**4 harness robustness improvements (bcb4382):** (1) history injection — last 10 score rows prepended to every developer prompt so agents don't repeat reverted changes or undo committed ones; (2) LPub3D mini-reference — exact meta-command syntax injected for ldraw-touching dimensions; (3) parse-error retry — one retry on unparseable JSON before SKIPPED_PARSE_ERROR; (4) test-failure retry — failing test output fed back to developer agent for one fix attempt.
+
+**Committed improvements to date (cumulative):**
 - 8bd95b3: axis transpose (star face → XZ plane)
 - 81fd8e2: tile Y-coordinate fix (tiles flush on studs)
 - bd1b576: subject-color filter (yellow star over white background)
 - ea0f2d0: masonry offset on odd brick layers (build stability)
-- 96ffeb8: replaced TripoSR with 2D silhouette extrusion — rembg alpha mask → stud-grid resize → vertical extrusion gives star-shaped voxel grid instead of rectangular blob; updated test_image_pipeline.py (311 → 313 tests)
-- 6d67628: Y-layer-first step sequencing in ldraw_writer — each vertical layer becomes its own build step (instruction_clarity)
-- acf8ca6: trailing `0 STEP` after every step including the last (LPub3D multi-page rendering); tests updated; developer timeout 300→600s
-- (shape-quality plan, 2026-06-13/14): sparse-fill guard + rembg diagnostic logging; 2×2 OR-pool downsample; integration test `tests/integration/test_star_pipeline.py`; axis-convention guard in developer prompt (315 tests)
-- d4405b0: BOM page insert (`!LPUB INSERT BOM` meta command)
-- 6d6f8a2: BOM position fix (command placed after final `0 STEP` at valid page boundary)
-- 15b8f0a: `!LPUB FADE STEPS ENABLED` header (previously-placed bricks faded/greyed per step)
-- 7d202dc: brick_packer alternating orientation on odd layers (cross-bond interlocking)
-- 2c05feb: tile decomposition — non-standard brick sizes (e.g. 2×3) split into 1-wide tile strips for uniform top-surface height
-- 90efe32: removed malformed `!LPUB FADE STEPS ENABLED` header (was missing TRUE/FALSE arg, caused LPub3D to blank every page)
-- 0533e5e: LDView camera latitude 30°→45°, resolution 800×600 (sharper preview, top footprint visible)
+- 96ffeb8: replaced TripoSR with 2D silhouette extrusion
+- 6d67628: Y-layer-first step sequencing in ldraw_writer
+- acf8ca6: trailing `0 STEP` after every step including the last
+- (shape-quality plan): sparse-fill guard, 2×2 OR-pool, integration test, axis-convention guard (315 tests)
+- d4405b0: BOM page insert (`!LPUB INSERT BOM`)
+- 6d6f8a2: BOM position fix (after final `0 STEP`)
+- 7d202dc: brick_packer alternating orientation on odd layers
+- 2c05feb: tile decomposition (non-standard brick sizes)
+- 90efe32: removed malformed FADE STEPS header
+- 0533e5e: LDView camera latitude 30°→45°, 800×600
+- (run 8, 15 commits): COVER_PAGE, FADE_STEPS, HIGHLIGHT_STEP meta commands; subject-color masking before KMeans; Lab palette cache; secondary color by lightness contrast; OR-pool elimination; alpha threshold 127; camera latitude 65°; masonry Z-scan alternation
+- (run 9, 16 commits — partial regression): oscillation removed run-8 LPub3D meta commands; net result near run-7 baseline
+- bcb4382: 4 harness robustness improvements (history injection, LPub3D reference, retries)
 
-**Harness image-passing note:** `claude -p` does not support `--image`. Images (preview PNG, input image) are passed as absolute paths in the prompt with "Use your Read tool to view this image." Same pattern used by PDF advisors. LDR content truncated to 400 lines before embedding. Advisor timeout 240s, developer timeout 600s.
+**Current dim scores (run 9, iter 20 state):**
+- pdf_completeness: 0 — LPub3D meta commands removed by run-9 oscillation; run 10 will re-add them
+- instruction_clarity: 1
+- build_stability: 2 (stubborn; multiple masonry approaches tried)
+- shape_fidelity: 3 (stubborn; needs human diagnosis — see items 5–6 in oscillation-fix discussion)
+- reference_fidelity: 4
+- aesthetics: 5–6
+- color_match: 7
+- technical_validity: 5–9 (varies by run)
+
+**Harness image-passing note:** `claude -p` does not support `--image`. Images (preview PNG, input image) are passed as absolute paths in the prompt with "Use your Read tool to view this image." LDR content truncated to 400 lines before embedding. Advisor timeout 240s, developer timeout 600s.
 
 **`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as Windows user environment variable (not `.env` file). Inherited by the desktop `.bat` launcher automatically. When running from PowerShell/Bash tools, load it explicitly: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`. The Bash tool does NOT inherit Windows user env vars — always launch harness from PowerShell.
 
 **pytest note:** `uv run pytest -q` alone will fail if a server is running on port 8000 (integration smoke tests hit it). Use `uv run pytest -q --ignore=tests/integration` for the clean gate. The harness always uses `--ignore=tests/integration`. Integration gate (shape-fidelity star test): `BRICKOMANCER_INTEGRATION=1 uv run pytest tests/integration/ -v`.
 
-**Next action:** Run `/run-harness --iterations 20` for overnight hill-climbing. build_stability (2) and shape_fidelity (3) remain the lowest scorers. pdf_completeness and instruction_clarity are still near-zero even after removing the malformed FADE header — further investigation needed. Harness output is now flat (no `iteration_N/` subdirs). Shape_fidelity root cause is rembg sparsity — M1 UAT (INV-7) still pending.
+**Next action:** Before next `/run-harness`, investigate items 5–6 from the oscillation-fix discussion: (5) read current ldraw_writer.py and image_pipeline.py to understand shape_fidelity root cause; (6) review current brick_packer.py masonry state for build_stability. Then run `/run-harness --iterations 20` — history injection now prevents oscillation.
 
 ## Environment requirements
 
