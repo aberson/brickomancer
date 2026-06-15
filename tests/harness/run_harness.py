@@ -533,6 +533,11 @@ def _build_history_context(n: int = 10) -> str:
         "  1. Do NOT repeat any approach marked REVERTED/SKIPPED — it failed or broke tests.",
         "  2. Do NOT undo a change that was COMMITTED — removing working code causes regression.",
         "  3. If the same approach has been tried twice without improvement, try something fundamentally different.",
+        "  4. Do NOT increase _MIN_FOOTPRINT_STUDS output to 20 or remove the OR-pool downsampling in",
+        "     _extrude_silhouette. A 20-stud build at height_studs=5 is a flat slab (4:1 aspect ratio)",
+        "     whose star shape is invisible from the camera. The two-stage 20→5-stud OR-pool is intentional.",
+        "  5. Shape_fidelity belongs to _extrude_silhouette (image_pipeline.py). Do NOT look for a",
+        "     camera-angle fix in subprocess_utils.py for a shape_fidelity issue — fix the voxel shape.",
     ])
     return "\n".join(out)
 
