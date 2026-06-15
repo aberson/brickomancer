@@ -1,21 +1,21 @@
 {
-  "plan_path": "docs/shape-quality-plan.md",
-  "plan_mtime": 1781415219.27747,
+  "plan_path": "docs/harness-plan.md",
+  "plan_mtime": 1781502641.2516563,
   "completed": [
     {
       "skill": "plan-review",
-      "verdict": "READY (auto-fixed 6 items)",
-      "timestamp": "2026-06-14T05:19:41.597664Z"
+      "verdict": "READY (0 autofixes)",
+      "timestamp": "2026-06-15T00:00:00Z"
     },
     {
       "skill": "plan-wrap",
-      "verdict": "READY (auto-fixed 2 items)",
-      "timestamp": "2026-06-14T06:40:00.000000Z"
+      "verdict": "READY (auto-fixed 1 item)",
+      "timestamp": "2026-06-15T00:01:00Z"
     },
     {
       "skill": "repo-sync",
-      "verdict": "created umbrella #32 + step issues #33-#38",
-      "timestamp": "2026-06-14T06:41:00.000000Z"
+      "verdict": "created #43 + #44; enriched umbrella #16",
+      "timestamp": "2026-06-15T00:02:00Z"
     }
   ],
   "halted_at": null

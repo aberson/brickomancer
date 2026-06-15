@@ -453,6 +453,27 @@ the full loop works with real TripoSR inference, real LPub3D PDF generation, and
 advisor scoring. This is deliberately an operator step — the harness cannot test itself
 automatically without running the full 30–60s TripoSR pipeline.
 
+### Step 19: Fix pdf_completeness — restore LPub3D meta commands in ldraw_writer
+
+- **Problem:** LPub3D produces a blank 1.2KB PDF (pdf_completeness=0/10, weight 6.83 — highest-weight failing dimension). Run-9 developer agents stripped all optional meta commands (COVER_PAGE, FADE_STEPS, HIGHLIGHT_STEP, INSERT MODEL) when diagnosing "blank PDF." History injection (bcb4382) prevents oscillation in run 10 but the commands are still absent at HEAD. Git archaeology confirms the exact syntax that previously produced non-blank PDFs with step pages, a cover page, and a BOM page. Three constraints from prior failures: (a) `FADE_STEPS ENABLED TRUE` — underscore, uppercase, `TRUE` required (missing `TRUE` blanked all pages in run-6 iter-3); (b) `0 !LPUB INSERT COVER_PAGE` — underscore required; (c) `COVER_PAGE` must appear after the first `0 STEP`, not in the header before any bricks (header placement caused blank 1-page PDF in run-9 iter-1). The CAUTION in `LPUB3D_META_REFERENCE` says to add optional commands one at a time: start with `INSERT MODEL`, then add `COVER_PAGE` after first STEP, then add `FADE_STEPS` header last.
+- **Type:** code
+- **Issue:** #43
+- **Flags:** --reviewers code
+- **Produces:** `src/brickomancer/services/ldraw_writer.py` — add `0 !LPUB FADE_STEPS ENABLED TRUE` + `0 !LPUB FADE_STEPS SETUP OPACITY 50` in header; add `0 !LPUB INSERT COVER_PAGE` after the first `0 STEP` emission in the step loop; add `0 !LPUB INSERT MODEL` at tail after `INSERT BOM`
+- **Done when:** `uv run pytest -q --ignore=tests/integration` passes (316 tests); `write_ldr` output inspected to confirm: FADE_STEPS header present with `TRUE` arg, COVER_PAGE appears after first `0 STEP` line (not before any brick lines), INSERT MODEL present after INSERT BOM at tail
+- **Depends on:** 18
+
+<!-- autofix-applied: 2026-06-15 -->
+### Step 20: Fix build_stability — per-Z-row starter pre-pass masonry in brick_packer
+
+- **Problem:** build_stability=2/10 (weight 6.05 — second-highest-weight failing dimension). LLM advisor finding: "All four brick layers are identical in X/Z placement — every brick sits directly above its counterpart in the layer below with zero horizontal offset. There is no interlocking whatsoever." The existing 4-period masonry (lines 274-286 of brick_packer.py, `phase = y % 4`, `x_offset`, `z_offset`, `scan_z_first`) uses scan-order rotation which fails for sparse star shapes: for a star arm that runs edge-to-edge in X, x=0 is always the leftmost occupied stud, so the greedy algorithm places the first brick at x=0 in every layer regardless of scan start offset. Additionally, `z_offset=1` (phases 2/3) causes 1×1 brick degeneration for narrow Z arms (≤2 studs wide). True fix: per-Z-row starter pre-pass — before the main greedy scan on odd layers, iterate every Z row and place a 1×1 brick at the leftmost occupied X position; this forces the main scan to start from leftmost+1, shifting all subsequent brick boundaries by 1 stud relative to even layers. Effect on a 6-stud-wide body: even-layer seams at {2,4,6}, odd-layer seams at {1,3,5,6} — genuine interlocking. The 4-period masonry block (lines 274-286 plus the `scan_z_first` / `start_x` multi-start logic in the inner loop) should be removed entirely and replaced with this simpler scheme.
+- **Type:** code
+- **Issue:** #44
+- **Flags:** --reviewers code
+- **Produces:** `src/brickomancer/services/brick_packer.py` — delete lines 274-349 (4-phase masonry + `scan_z_first` / `starts` / `start_x` loop); add per-Z-row starter pre-pass for `y % 2 == 1` layers; simplify inner scan to standard `for x in range(X): for z in range(Z)` with single-start orientation loop; update `pack()` docstring bullet. `tests/test_brick_packer.py` — add `TestMasonryInterlocking` class with 4 tests: (1) even/odd layers have different X-seam sets on a 6×2×2 slab; (2) odd layer has a multi-stud brick starting at x=1; (3) 8×4×2 arm has no all-1×1 layer (no z-offset degeneration); (4) layers 0/2 match, 1/3 match, 0 differs from 1 (A/B/A/B pattern)
+- **Done when:** `uv run pytest -q --ignore=tests/integration` passes (320 tests expected); new `TestMasonryInterlocking` tests all pass including `test_odd_layer_has_multi_stud_brick_starting_at_x1` which asserts odd-layer first bricks start at x=1 (seam offset active)
+- **Depends on:** 18
+
 ---
 
 ## 10. Post-Build Fixes (2026-06-13)
