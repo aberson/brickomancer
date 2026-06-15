@@ -462,6 +462,7 @@ automatically without running the full 30–60s TripoSR pipeline.
 - **Produces:** `src/brickomancer/services/ldraw_writer.py` — add `0 !LPUB FADE_STEPS ENABLED TRUE` + `0 !LPUB FADE_STEPS SETUP OPACITY 50` in header; add `0 !LPUB INSERT COVER_PAGE` after the first `0 STEP` emission in the step loop; add `0 !LPUB INSERT MODEL` at tail after `INSERT BOM`
 - **Done when:** `uv run pytest -q --ignore=tests/integration` passes (316 tests); `write_ldr` output inspected to confirm: FADE_STEPS header present with `TRUE` arg, COVER_PAGE appears after first `0 STEP` line (not before any brick lines), INSERT MODEL present after INSERT BOM at tail
 - **Depends on:** 18
+- **Status:** DONE (2026-06-15)
 
 <!-- autofix-applied: 2026-06-15 -->
 ### Step 20: Fix build_stability — per-Z-row starter pre-pass masonry in brick_packer
