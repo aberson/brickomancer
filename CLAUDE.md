@@ -101,12 +101,13 @@ Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build 
 - (run 8, 15 commits): COVER_PAGE, FADE_STEPS, HIGHLIGHT_STEP meta commands; subject-color masking before KMeans; Lab palette cache; secondary color by lightness contrast; OR-pool elimination; alpha threshold 127; camera latitude 65°; masonry Z-scan alternation
 - (run 9, 16 commits — partial regression): oscillation removed run-8 LPub3D meta commands; net result near run-7 baseline
 - bcb4382: 4 harness robustness improvements (history injection, LPub3D reference, retries)
+- 689f776: two-stage OR-pool downsampling in _extrude_silhouette (LANCZOS at 20 studs → OR-pool to max(height_studs, 5)); fixes shape_fidelity root cause (20-stud flat slab invisible from camera angle)
 
-**Current dim scores (run 9, iter 20 state):**
+**Current dim scores (run 9, iter 20 state — pre-run-10):**
 - pdf_completeness: 0 — LPub3D meta commands removed by run-9 oscillation; run 10 will re-add them
 - instruction_clarity: 1
-- build_stability: 2 (stubborn; multiple masonry approaches tried)
-- shape_fidelity: 3 (stubborn; needs human diagnosis — see items 5–6 in oscillation-fix discussion)
+- build_stability: 2 (stubborn; 1×1 pillars at star arm tips; smaller footprint from 689f776 should help)
+- shape_fidelity: 3 (root cause fixed in 689f776; expect improvement in run 10)
 - reference_fidelity: 4
 - aesthetics: 5–6
 - color_match: 7
@@ -118,7 +119,11 @@ Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build 
 
 **pytest note:** `uv run pytest -q` alone will fail if a server is running on port 8000 (integration smoke tests hit it). Use `uv run pytest -q --ignore=tests/integration` for the clean gate. The harness always uses `--ignore=tests/integration`. Integration gate (shape-fidelity star test): `BRICKOMANCER_INTEGRATION=1 uv run pytest tests/integration/ -v`.
 
-**Next action:** Before next `/run-harness`, investigate items 5–6 from the oscillation-fix discussion: (5) read current ldraw_writer.py and image_pipeline.py to understand shape_fidelity root cause; (6) review current brick_packer.py masonry state for build_stability. Then run `/run-harness --iterations 20` — history injection now prevents oscillation.
+**Next action:**
+
+**Investigate:** Review `tests/harness/scores.jsonl` last 5 rows and the most recent `tests/harness/runs/*_advisor_reports.json` to understand build_stability findings in detail. Post findings and STOP — wait for user response before proceeding.
+
+**After user approval:** Run `/run-harness --iterations 20`.
 
 ## Environment requirements
 

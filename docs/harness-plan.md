@@ -943,3 +943,47 @@ Each developer agent is a fresh `claude -p` subprocess with no memory of prior i
 | shape_fidelity stuck | Has been targeted ~10 times, never exceeded 5. Contradictory approaches (OR-pool / no-pool / threshold / 5-stud / 10-stud / 20-stud) cycle without convergence. Needs human diagnosis — see items 5–6 in the oscillation-fix discussion. |
 | build_stability stuck | Similar pattern — multiple masonry approaches tried (Z-scan, swap starts, 4-period). Score returns to 2 after each. |
 | 316 unit tests passing | +1 from `test_revert_path_fix_retry_success` (bcb4382). |
+
+---
+
+## Run 10 pre-flight — shape_fidelity root cause fix (2026-06-15)
+
+**Commit:** `689f776`
+
+### Diagnosis
+
+Human inspection of the `i9_1638_advisor_reports.json` and rendered preview PNG revealed the root cause of shape_fidelity=2-3 across all runs:
+
+- `_extrude_silhouette` was outputting at `_MIN_FOOTPRINT_STUDS=20` studs, producing a **flat 20×5×20 slab** (4:1 width:height ratio).
+- From the standard isometric LDView camera angle (35° latitude), only the side face of the slab is visible — the star footprint in the XZ plane is invisible.
+- Gold reference (`star_step_10.png`) shows a compact ~5-stud-wide 3D star viewed isometrically. The 20-stud slab is structurally incompatible with this reference regardless of camera angle.
+
+Advisor quote: *"The LEGO build shows no points whatsoever — it is a wide rectangular/trapezoidal slab."*
+
+**build_stability secondary finding:** isolated 1×1 columns at star arm tips (single-stud-wide positions at 20-stud scale). Masonry helps the body but not the arm tips.
+
+### Fix: two-stage OR-pool downsampling (`689f776`)
+
+| Stage | What it does |
+|---|---|
+| Stage 1 | LANCZOS resize alpha to `_MIN_FOOTPRINT_STUDS=20` — preserves thin star arm tips that vanish at 5 pixels |
+| Stage 2 | OR-pool the binary mask to `max(height_studs, 5)` studs — any True pixel in each block → True; output at height_studs=5 is now 5×5 studs |
+
+OR-pool trade-off: concavities narrower than the block size may fill in, producing a slightly blobby star. A compact blobby star still scores far better than a 20-stud flat slab.
+
+Also fixed: pre-existing curly-quote corruption (U+201C/201D) in `image_pipeline.py` string literals; added HARD RULES 4–5 to `run_harness.py` preventing agents from reverting the OR-pool stage.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/brickomancer/services/image_pipeline.py` | Two-stage sampling in `_extrude_silhouette`; curly-quote fix |
+| `tests/harness/run_harness.py` | HARD RULES 4–5: do not increase footprint to 20 studs; shape_fidelity belongs to image_pipeline not subprocess_utils |
+
+### Fresh context notes for run 10 pre-flight
+
+| Issue | Detail |
+|---|---|
+| OR-pool is intentional | HARD RULE 4 in `run_harness.py` blocks dev agents from removing it or reverting to 20-stud output. |
+| build_stability still 2 | Smaller footprint (5×5 vs 20×20) should widen arm tips from 1-stud to 2-stud, enabling 1×2 bricks and reducing 1×1 pillar count. Run 10 will test this. |
+| 316 unit tests passing | Unchanged — all 4 `_extrude_silhouette` tests pass with two-stage pipeline (shape[1]==height verified for all heights). |
