@@ -2,7 +2,7 @@
 
 Two public functions:
   extract_colors(image_path) -> list[ColorMatch]
-      Runs KMeans (k=12) in Lab color space on the image pixels, then maps
+      Runs KMeans (k=6) in Lab color space on the image pixels, then maps
       each cluster centroid to the nearest LEGO color via ΔE2000.
 
   match_color(rgb_hex) -> ColorMatch
@@ -30,7 +30,7 @@ from brickomancer.services.data_service import list_colors
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-_K_CLUSTERS = 12  # Number of KMeans clusters
+_K_CLUSTERS = 6  # Number of KMeans clusters
 
 _LAB = tuple[float, float, float]
 
