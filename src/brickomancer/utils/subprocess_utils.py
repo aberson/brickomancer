@@ -54,7 +54,7 @@ _LPUB3D_LDVIEW_CANDIDATES: list[str] = [
     r"C:\Program Files\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe",
     r"C:\Program Files (x86)\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe",
 ]
-# LPub3D also ships its own LDraw parts library â€” pass it to standalone LDView.
+# LPub3D also ships its own LDraw parts library — pass it to standalone LDView.
 _LPUB3D_LDRAW_CANDIDATES: list[str] = [
     r"C:\Tools\LPub3D\ldraw",
     r"C:\Program Files\LPub3D\ldraw",
@@ -106,7 +106,7 @@ def run_ldview(ldr_path: str, output_png: str) -> None:
         "-Latitude=65",
         "-Longitude=45",
     ]
-    # Always pass the LDraw library dir â€” even LPub3D's bundled LDView needs it
+    # Always pass the LDraw library dir — even LPub3D's bundled LDView needs it
     # when invoked as a standalone subprocess (it doesn't auto-detect its own parts dir).
     ldraw_dir = _find_ldraw_dir()
     if ldraw_dir:
@@ -144,13 +144,18 @@ def run_lpub3d(ldr_path: str, output_dir: str) -> str:
 
     # LPub3D writes the PDF next to the input .ldr file as <basename>_<dpi>_DPI.pdf.
     # The -x flag activates headless export mode; -pe pdf selects PDF output.
-    ldr_dir = os.path.dirname(os.path.abspath(ldr_path))
+    # Run from LPub3D's own install dir so it auto-detects its bundled LDraw library;
+    # pass an absolute ldr_path so the PDF is written next to the source file regardless of cwd.
+    abs_ldr_path = os.path.abspath(ldr_path)
+    ldr_dir = os.path.dirname(abs_ldr_path)
+    lpub3d_dir = os.path.dirname(os.path.abspath(lpub3d_cmd))
     try:
         result = subprocess.run(
-            [lpub3d_cmd, "-x", "-pe", "pdf", ldr_path],
+            [lpub3d_cmd, "-x", "-pe", "pdf", abs_ldr_path],
             capture_output=True,
             text=True,
             timeout=120,
+            cwd=lpub3d_dir,
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("LPub3D timed out after 120s") from exc
