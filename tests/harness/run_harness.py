@@ -606,7 +606,7 @@ def developer_agent(advisor_results: dict[str, Any], iteration: int) -> dict[str
     lpub_section = LPUB3D_META_REFERENCE if dimension in _LPUB_DIMENSIONS else ""
 
     prompt = (
-        f"You are a developer improving a LEGO instruction PDF generator.\n\n"
+        "You are a developer improving a LEGO instruction PDF generator.\n\n"
         + (f"{history_context}\n\n" if history_context else "")
         + f"Selected quality dimension: {dimension}\n"
         f"Normalized score: {normalized_score:.1f}/10 (lower = more room to improve)\n\n"
