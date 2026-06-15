@@ -177,7 +177,7 @@ class TestDeveloperAgentIntegration:
         assert "pytest" in second_cmd
 
     def test_revert_path(self, tmp_path: Path) -> None:
-        """When pytest fails, developer_agent reverts the file."""
+        """When pytest fails and fix retry also fails to parse, developer_agent reverts."""
         _setup_source_files(tmp_path)
         advisor_results = _fake_advisor_results("shape_fidelity")
 
@@ -188,9 +188,10 @@ class TestDeveloperAgentIntegration:
         })
 
         side_effects = [
-            _mock_subprocess(0, stdout=dev_json),    # claude
-            _mock_subprocess(1, stderr="FAILED"),    # pytest fails
-            _mock_subprocess(0),                     # git checkout (revert)
+            _mock_subprocess(0, stdout=dev_json),      # claude (initial)
+            _mock_subprocess(1, stderr="FAILED"),      # pytest fails
+            _mock_subprocess(0, stdout="not json"),    # claude fix retry — unparseable
+            _mock_subprocess(0),                       # git checkout (revert)
         ]
 
         with patch.dict("os.environ", {"CLAUDE_CODE_OAUTH_TOKEN": "fake"}):
@@ -203,10 +204,47 @@ class TestDeveloperAgentIntegration:
         assert result["test_result"] == "SKIPPED_REVERT"
         assert result["selected_dimension"] == "shape_fidelity"
 
-        # Verify git checkout was called for the revert
-        assert mock_run.call_count == 3
-        last_cmd = mock_run.call_args_list[2].args[0]
+        # claude, pytest, claude-fix-retry, git checkout
+        assert mock_run.call_count == 4
+        last_cmd = mock_run.call_args_list[3].args[0]
         assert "checkout" in last_cmd
+
+    def test_revert_path_fix_retry_success(self, tmp_path: Path) -> None:
+        """When pytest fails but fix retry produces valid code, the fixed version commits."""
+        _setup_source_files(tmp_path)
+        advisor_results = _fake_advisor_results("shape_fidelity")
+
+        changed_file = "src/brickomancer/services/image_pipeline.py"
+        dev_json = json.dumps({
+            "changes": [{"file_path": changed_file, "content": "# broken\n"}],
+            "summary": "Added feature but broke test",
+        })
+        fix_json = json.dumps({
+            "changes": [{"file_path": changed_file, "content": "# fixed\n"}],
+            "summary": "Fixed test breakage",
+        })
+
+        side_effects = [
+            _mock_subprocess(0, stdout=dev_json),      # claude (initial)
+            _mock_subprocess(1, stderr="FAILED"),      # pytest fails
+            _mock_subprocess(0, stdout=fix_json),      # claude fix retry — valid
+            _mock_subprocess(0, stdout="5 passed"),    # pytest retry passes
+            _mock_subprocess(0),                       # git add
+            _mock_subprocess(0),                       # git commit
+        ]
+
+        with patch.dict("os.environ", {"CLAUDE_CODE_OAUTH_TOKEN": "fake"}):
+            with patch("tests.harness.run_harness.PROJECT_ROOT", tmp_path):
+                with patch(
+                    "tests.harness.run_harness.subprocess.run", side_effect=side_effects
+                ) as mock_run:
+                    result = developer_agent(advisor_results, iteration=1)
+
+        assert result["test_result"] == "PASS_COMMITTED"
+        assert result["change_summary"] == "Fixed test breakage"
+        assert mock_run.call_count == 6
+        written = (tmp_path / changed_file).read_text()
+        assert written == "# fixed\n"
 
     def test_no_token_returns_early(self, tmp_path: Path) -> None:
         """Without CLAUDE_CODE_OAUTH_TOKEN, developer_agent returns SKIPPED_NO_TOKEN."""

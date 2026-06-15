@@ -84,6 +84,24 @@ DIMENSION_SOURCE_FILES: dict[str, list[str]] = {
     ],
 }
 
+# Dimensions whose source files include ldraw_writer.py — inject LPub3D reference
+_LPUB_DIMENSIONS = {"pdf_completeness", "instruction_clarity", "technical_validity", "build_stability"}
+
+# LPub3D meta command reference injected into developer prompts for ldraw-touching dimensions.
+# Wrong syntax or wrong placement produces blank PDFs — use exact forms below.
+LPUB3D_META_REFERENCE = """
+LPub3D meta command reference (EXACT syntax required — wrong form produces blank PDFs):
+  0 STEP                               — page break; insert after every build layer including the last
+  0 !LPUB INSERT BOM                   — parts list page; place AFTER the final 0 STEP (stable — do not remove)
+  0 !LPUB INSERT COVER_PAGE            — cover page; must appear AFTER a 0 STEP boundary, NOT before any bricks
+  0 !LPUB FADE_STEPS ENABLED TRUE      — fade previously-placed bricks; goes in file header before first brick line
+  0 !LPUB FADE_STEPS SETUP OPACITY 50  — set fade opacity 0-100; place immediately after FADE_STEPS ENABLED line
+  0 !LPUB HIGHLIGHT_STEP ENABLED TRUE  — highlight newly-added bricks per step; goes in header before first brick
+  0 !LPUB HIGHLIGHT_STEP SETUP COLOR 0000FF — highlight color as 6-char hex; after HIGHLIGHT_STEP ENABLED line
+CAUTION: Multiple optional meta commands combined can cause blank pages. If pdf_completeness is 0, remove all
+optional commands first (keep only 0 STEP and INSERT BOM), confirm pages render, then add one at a time.
+"""
+
 # ---------------------------------------------------------------------------
 # Input image selection
 # ---------------------------------------------------------------------------
@@ -490,6 +508,35 @@ def _select_dimension(weights: dict[str, float]) -> str:
     return random.choices(ids, weights=w_vals, k=1)[0]
 
 
+def _build_history_context(n: int = 10) -> str:
+    """Return a formatted summary of the last N iterations for the developer prompt."""
+    if not SCORES_JSONL.exists():
+        return ""
+    try:
+        raw_lines = SCORES_JSONL.read_text(encoding="utf-8").splitlines()
+        rows = [json.loads(ln) for ln in raw_lines[-n:] if ln.strip()]
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not rows:
+        return ""
+    out = ["Recent iteration history — study BEFORE making any change:"]
+    for row in rows:
+        result = row.get("test_result", "?")
+        dim = row.get("selected_dimension", "?")
+        avg = row.get("avg_raw", "?")
+        summary = (row.get("change_summary") or "(no summary)")[:120]
+        tag = "COMMITTED ✓" if result == "PASS_COMMITTED" else f"REVERTED/SKIPPED ({result}) ✗"
+        out.append(f"  [{tag}] dim={dim} avg_raw={avg}: \"{summary}\"")
+    out.extend([
+        "",
+        "HARD RULES based on the history above:",
+        "  1. Do NOT repeat any approach marked REVERTED/SKIPPED — it failed or broke tests.",
+        "  2. Do NOT undo a change that was COMMITTED — removing working code causes regression.",
+        "  3. If the same approach has been tried twice without improvement, try something fundamentally different.",
+    ])
+    return "\n".join(out)
+
+
 def _parse_developer_output(output: str) -> dict[str, Any] | None:
     """Extract JSON with a 'changes' key from developer agent output."""
     try:
@@ -550,22 +597,26 @@ def developer_agent(advisor_results: dict[str, Any], iteration: int) -> dict[str
     )
     findings_text = "\n".join(f"- {f}" for f in findings) if findings else "(no findings)"
     valid_paths = list(file_contents.keys())
+    history_context = _build_history_context(n=10)
+    lpub_section = LPUB3D_META_REFERENCE if dimension in _LPUB_DIMENSIONS else ""
 
     prompt = (
         f"You are a developer improving a LEGO instruction PDF generator.\n\n"
-        f"Selected quality dimension: {dimension}\n"
+        + (f"{history_context}\n\n" if history_context else "")
+        + f"Selected quality dimension: {dimension}\n"
         f"Normalized score: {normalized_score:.1f}/10 (lower = more room to improve)\n\n"
         f"Advisor findings:\n{findings_text}\n\n"
-        f"Source files:\n{file_sections}\n\n"
+        + (f"{lpub_section}\n" if lpub_section else "")
+        + f"Source files:\n{file_sections}\n\n"
         f"Task: make EXACTLY ONE targeted code change to improve the \"{dimension}\" dimension.\n"
-        f"Study the findings, then make a single focused improvement in one source file.\n"
+        f"Study the findings and history above, then make a single focused improvement in one source file.\n"
         f"Do not add explanatory comments. Do not modify unrelated code.\n\n"
-        f"\n\nAXIS CONVENTION — DO NOT CHANGE:\n"
+        f"AXIS CONVENTION — DO NOT CHANGE:\n"
         f"  voxel_grid shape is (X, Y, Z) where Y is the vertical build axis (brick layers).\n"
         f"  _extrude_silhouette MUST return (footprint_x, height_studs, footprint_z).\n"
         f"  Any change that makes shape[1] != height_studs will fail three existing tests.\n"
         f"  The tall narrow column symptom is caused by a sparse voxel grid from rembg,\n"
-        f"  NOT by the wrong axis — do not attempt axis changes.\n"
+        f"  NOT by the wrong axis — do not attempt axis changes.\n\n"
         f"Output ONLY valid JSON on a single line:\n"
         f'  {{"changes": [{{"file_path": "<path>", "content": "<complete file>"}}], '
         f'"summary": "<one sentence>"}}\n\n'
@@ -600,8 +651,26 @@ def developer_agent(advisor_results: dict[str, Any], iteration: int) -> dict[str
 
     changes_data = _parse_developer_output(dev_proc.stdout.strip())
     if changes_data is None:
-        log.warning("developer_agent unparseable output: %s", dev_proc.stdout[:300])
-        return _dev_skip(dimension, "SKIPPED_PARSE_ERROR")
+        log.warning("developer_agent unparseable output (attempt 1): %s", dev_proc.stdout[:300])
+        retry_prompt = (
+            f"Your previous response was not valid JSON. You were improving the \"{dimension}\" "
+            f"dimension of a LEGO instruction PDF generator. Your response was:\n\n"
+            f"{dev_proc.stdout[:800]}\n\n"
+            f"Return ONLY a single line of valid JSON with no other text:\n"
+            f'{{"changes": [{{"file_path": "<one of {valid_paths}>", '
+            f'"content": "<complete new file content>"}}], "summary": "<one sentence>"}}'
+        )
+        try:
+            retry_proc = subprocess.run(
+                ["claude", "-p", retry_prompt],
+                capture_output=True, text=True, timeout=DEVELOPER_TIMEOUT_S, env=env,
+            )
+            changes_data = _parse_developer_output(retry_proc.stdout.strip())
+        except (subprocess.TimeoutExpired, OSError):
+            changes_data = None
+        if changes_data is None:
+            log.warning("developer_agent unparseable after retry")
+            return _dev_skip(dimension, "SKIPPED_PARSE_ERROR")
 
     changes: list[dict[str, Any]] = changes_data.get("changes", [])
     summary: str = str(changes_data.get("summary", "(no summary)"))
@@ -633,11 +702,50 @@ def developer_agent(advisor_results: dict[str, Any], iteration: int) -> dict[str
     )
 
     if test_proc.returncode != 0:
-        log.warning(
-            "pytest gate failed:\n%s\n%s",
-            test_proc.stdout[-2000:] if test_proc.stdout else "",
-            test_proc.stderr[-500:] if test_proc.stderr else "",
+        test_errors = (
+            (test_proc.stdout[-3000:] if test_proc.stdout else "")
+            + (test_proc.stderr[-500:] if test_proc.stderr else "")
         )
+        log.warning("pytest gate failed (attempt 1):\n%s", test_errors[-1000:])
+        current_broken = abs_target.read_text(encoding="utf-8")
+        fix_prompt = (
+            f"You improved the \"{dimension}\" dimension of a LEGO instruction PDF generator "
+            f"by modifying {rel_path}, but your change broke unit tests.\n\n"
+            f"Failing tests:\n{test_errors}\n\n"
+            f"Current file (your change applied):\n--- {rel_path} ---\n{current_broken}\n--- end {rel_path} ---\n\n"
+            f"Fix ONLY the test failures — preserve the intent of your improvement. "
+            f"Return ONLY a single line of valid JSON:\n"
+            f'{{"changes": [{{"file_path": "{rel_path}", "content": "<complete fixed file>"}}], '
+            f'"summary": "<one sentence>"}}'
+        )
+        try:
+            fix_proc = subprocess.run(
+                ["claude", "-p", fix_prompt],
+                capture_output=True, text=True, timeout=DEVELOPER_TIMEOUT_S, env=env,
+            )
+            fix_data = _parse_developer_output(fix_proc.stdout.strip())
+        except (subprocess.TimeoutExpired, OSError):
+            fix_data = None
+        if fix_data:
+            fix_changes = fix_data.get("changes", [{}])
+            fix_content = fix_changes[0].get("content", "") if fix_changes else ""
+            fix_path = fix_changes[0].get("file_path", "") if fix_changes else ""
+            if fix_content and fix_path == rel_path:
+                abs_target.write_text(fix_content, encoding="utf-8")
+                log.info("developer_agent: wrote test-fix retry to %s", rel_path)
+                summary = str(fix_data.get("summary", summary))
+                test_proc = subprocess.run(
+                    ["uv", "run", "pytest", "-q", "--tb=short", "--ignore=tests/integration"],
+                    capture_output=True, text=True, timeout=300, cwd=str(PROJECT_ROOT),
+                )
+                if test_proc.returncode == 0:
+                    log.info("developer_agent: test-fix retry passed")
+                else:
+                    log.warning("pytest gate failed after retry — reverting %s", rel_path)
+            else:
+                log.warning("developer_agent: test-fix retry returned unusable changes")
+        else:
+            log.warning("developer_agent: test-fix retry unparseable — reverting %s", rel_path)
 
     if test_proc.returncode == 0:
         git_add = subprocess.run(
