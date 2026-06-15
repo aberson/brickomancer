@@ -1,4 +1,4 @@
-"""Image pipeline — rembg background removal, TripoSR mesh generation, voxelization.
+"""Image pipeline â€” rembg background removal, TripoSR mesh generation, voxelization.
 
 TripoSR and torch are NOT listed in pyproject.toml (CUDA-specific install required
 separately).  rembg requires onnxruntime (CPU or GPU variant).  Both imports are
@@ -17,7 +17,7 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Optional rembg import — guarded because rembg calls sys.exit(1) when
+# Optional rembg import â€” guarded because rembg calls sys.exit(1) when
 # onnxruntime is absent, which would crash the collection phase.
 # ---------------------------------------------------------------------------
 try:
@@ -29,7 +29,7 @@ except (ImportError, SystemExit):
     _REMBG_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
-# Optional TripoSR import — guarded so the module loads without CUDA deps.
+# Optional TripoSR import â€” guarded so the module loads without CUDA deps.
 # ---------------------------------------------------------------------------
 try:
     from tsr.system import TSR as _TSR  # type: ignore[import-untyped]
@@ -41,7 +41,7 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers — constants
+# Internal helpers â€” constants
 # ---------------------------------------------------------------------------
 
 # 1 LEGO stud = 8 LDU (LDraw Units) = 9.6 mm = 0.0096 m.
@@ -56,7 +56,7 @@ _STUD_METERS: float = 0.0096
 _MIN_FOOTPRINT_STUDS: int = 20
 
 # ---------------------------------------------------------------------------
-# Internal helpers — functions
+# Internal helpers â€” functions
 # ---------------------------------------------------------------------------
 
 
@@ -171,39 +171,19 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
         rgba_image = rgba_image.convert("RGBA")
     w, h = rgba_image.size
 
-    # Sample at high internal resolution so LANCZOS preserves thin star arms
+    # Sample at full output resolution so thin star arms and tips survive intact.
+    # Downsampling from hiresâ†’output with a mean threshold was dropping pixels at
+    # arm tips (1/4 pool fill = 0.25 < 0.4 threshold), erasing all star points.
     if w >= h:
-        hires_x = max(height_studs, _MIN_FOOTPRINT_STUDS)
-        hires_z = max(1, round(hires_x * h / w))
+        target_x = max(height_studs, _MIN_FOOTPRINT_STUDS)
+        target_z = max(1, round(target_x * h / w))
     else:
-        hires_z = max(height_studs, _MIN_FOOTPRINT_STUDS)
-        hires_x = max(1, round(hires_z * w / h))
+        target_z = max(height_studs, _MIN_FOOTPRINT_STUDS)
+        target_x = max(1, round(target_z * w / h))
 
     alpha = rgba_image.split()[3]
-    alpha_hires = alpha.resize((hires_x, hires_z), Image.Resampling.LANCZOS)
-    mask_hires = np.array(alpha_hires) > 127  # shape (hires_z, hires_x)
-
-    # Output dimensions proportional to height_studs and image aspect ratio.
-    # Minimum of 5 studs keeps the build compact (matching the gold reference scale)
-    # while the 20-stud hires buffer provides 4:1 supersampling to preserve star tips.
-    if w >= h:
-        output_x = max(height_studs, 5)
-        output_z = max(1, round(output_x * h / w))
-    else:
-        output_z = max(height_studs, 5)
-        output_x = max(1, round(output_z * w / h))
-
-    # Threshold at 0.4 preserves narrow concavities between star arms that
-    # OR-pool (any()) would fill when the pool block spans a ~2px gap.
-    mask_zx = np.zeros((output_z, output_x), dtype=bool)
-    for ti in range(output_z):
-        si0 = (ti * hires_z) // output_z
-        si1 = max(si0 + 1, ((ti + 1) * hires_z) // output_z)
-        for tj in range(output_x):
-            sj0 = (tj * hires_x) // output_x
-            sj1 = max(sj0 + 1, ((tj + 1) * hires_x) // output_x)
-            block = mask_hires[si0:si1, sj0:sj1]
-            mask_zx[ti, tj] = block.mean() > 0.4
+    alpha_resized = alpha.resize((target_x, target_z), Image.Resampling.LANCZOS)
+    mask_zx = np.array(alpha_resized) > 127  # shape (target_z, target_x)
 
     logger.info(
         "silhouette fill: %.1f%% (%d/%d studs)",
@@ -212,12 +192,12 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
         mask_zx.size,
     )
     if mask_zx.sum() < 4:
-        logger.warning("sparse rembg output — using solid fill fallback")
+        logger.warning("sparse rembg output â€” using solid fill fallback")
         mask_zx[:] = True
 
-    voxels = np.zeros((output_x, height_studs, output_z), dtype=bool)
+    voxels = np.zeros((target_x, height_studs, target_z), dtype=bool)
     for y in range(height_studs):
-        voxels[:, y, :] = mask_zx.T  # (output_z, output_x).T → (output_x, output_z)
+        voxels[:, y, :] = mask_zx.T  # (target_z, target_x).T â†’ (target_x, target_z)
     return voxels
 
 
@@ -227,7 +207,7 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
 
 
 def run(image_path: str, height_studs: int = 10) -> np.ndarray:
-    """Full image pipeline: rembg background removal → silhouette extrusion → voxel grid.
+    """Full image pipeline: rembg background removal â†’ silhouette extrusion â†’ voxel grid.
 
     Uses 2-D alpha-channel extrusion so cartoon/clip-art images produce the correct
     silhouette shape instead of the rectangular blob that TripoSR reconstructs from
