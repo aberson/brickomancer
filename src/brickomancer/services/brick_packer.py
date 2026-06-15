@@ -3,8 +3,8 @@
 Public API
 ----------
 pack(voxel_grid, color_id) -> list[BrickPlacement]
-    Greedy layer-by-layer placement with masonry offset, interlocking check,
-    and connectivity repair.
+    Greedy layer-by-layer placement with per-Z-row starter pre-pass masonry,
+    interlocking check, and connectivity repair.
 
 interlocking_check(placements, layer) -> list[BrickPlacement]
     Verify and repair interlocking for a single layer (called internally by pack).
@@ -232,7 +232,11 @@ def pack(
     """Pack a voxel grid into a list of BrickPlacements.
 
     Greedy layer-by-layer placement with:
-    - Masonry offset (odd layers shifted +1 in X)
+    - Per-Z-row starter pre-pass masonry: on odd layers (y % 2 == 1), place a
+      1×1 brick at the leftmost occupied stud in each Z row before the main
+      greedy scan. This forces the main scan to start from leftmost+1, shifting
+      all seam positions relative to even layers and producing true interlocking.
+      Even layers (y % 2 == 0) use a standard scan from x=0 with no pre-pass.
     - Connectivity enforcement: each brick at y>0 must share ≥1 stud with the
       layer below; if no brick type achieves this, fall through and rely on
       connectivity_repair.
@@ -271,52 +275,54 @@ def pack(
         # Footprint of all bricks already placed in layer y-1
         below_fps: set[tuple[int, int]] = _collect_footprints(placements, y - 1) if y > 0 else set()
 
-        # 4-period masonry: unique (x_offset, z_offset, scan_z_first) per phase
-        # so no two layers two courses apart share the same brick layout,
-        # breaking the A→B→A→B column-stack cycle.
-        phase = y % 4
-        x_offset = 1 if phase in (1, 3) else 0
-        z_offset = 1 if phase in (2, 3) else 0
-        scan_z_first = phase in (1, 3)
-        x_order = list(range(x_offset, X)) + list(range(0, x_offset))
-        z_order = list(range(z_offset, Z)) + list(range(0, z_offset))
-        if scan_z_first:
-            scan_positions = [(x, z) for z in z_order for x in x_order]
-        else:
-            scan_positions = [(x, z) for x in x_order for z in z_order]
+        # Per-Z-row starter pre-pass for odd layers only.
+        # For each Z row, find the leftmost occupied, unplaced stud and place a
+        # 1×1 there. This shifts the greedy scan's effective start to x=1 in
+        # every row, producing seam positions that differ from even layers.
+        if y % 2 == 1:
+            for z in range(Z):
+                for x in range(X):
+                    if grid[x, y, z] and not covered[x, z]:
+                        # Connectivity check before placing pre-pass 1×1
+                        candidate = BrickPlacement(
+                            part_id=BRICK_PART_IDS[(1, 1)],
+                            color_id=color_id,
+                            x=x,
+                            y=y,
+                            z=z,
+                            width=1,
+                            length=1,
+                        )
+                        if y > 0 and below_fps and not _has_connection(candidate, below_fps):
+                            break  # no connected starter in this Z row; skip pre-pass for it
+                        placements.append(candidate)
+                        covered[x, z] = True
+                        break  # one starter per Z row
 
-        for x, z in scan_positions:
-            if covered[x, z] or not grid[x, y, z]:
-                continue
+        # Main greedy scan: standard x-first order
+        for x in range(X):
+            for z in range(Z):
+                if covered[x, z] or not grid[x, y, z]:
+                    continue
 
-            placed = False
-            for w, ln in brick_set:
-                if scan_z_first and w != ln and (ln, w) in BRICK_PART_IDS:
-                    orientations: list[tuple[int, int]] = [(ln, w), (w, ln)]
-                else:
-                    orientations = [(w, ln)]
+                placed = False
+                for w, ln in brick_set:
+                    orientations: list[tuple[int, int]] = [(w, ln)]
                     if w != ln and (ln, w) in BRICK_PART_IDS:
                         orientations.append((ln, w))
 
-                for bw, bl in orientations:
-                    if scan_z_first and bw > 1:
-                        half = bw // 2
-                        starts = [s for s in [x, x - half] if s >= 0]
-                    else:
-                        starts = [x]
-
-                    for start_x in starts:
+                    for bw, bl in orientations:
                         # Check bounds
-                        if start_x + bw > X or z + bl > Z:
+                        if x + bw > X or z + bl > Z:
                             continue
 
                         # Check that all stud positions are occupied in the voxel grid
-                        region = grid[start_x : start_x + bw, y, z : z + bl]
+                        region = grid[x : x + bw, y, z : z + bl]
                         if not region.all():
                             continue
 
                         # Check none already covered
-                        cov_region = covered[start_x : start_x + bw, z : z + bl]
+                        cov_region = covered[x : x + bw, z : z + bl]
                         if cov_region.any():
                             continue
 
@@ -324,7 +330,7 @@ def pack(
                         candidate = BrickPlacement(
                             part_id=BRICK_PART_IDS[(bw, bl)],
                             color_id=color_id,
-                            x=start_x,
+                            x=x,
                             y=y,
                             z=z,
                             width=bw,
@@ -334,34 +340,31 @@ def pack(
                         # Connectivity check for layers above ground
                         if y > 0 and below_fps:
                             if not _has_connection(candidate, below_fps):
-                                continue  # try next start or smaller brick
+                                continue  # try next orientation or smaller brick
 
                         # Accept
                         placements.append(candidate)
-                        covered[start_x : start_x + bw, z : z + bl] = True
+                        covered[x : x + bw, z : z + bl] = True
                         placed = True
-                        break  # break start_x loop
-
-                    if placed:
                         break  # break orientations loop
 
-                if placed:
-                    break  # break brick_set loop
+                    if placed:
+                        break  # break brick_set loop
 
-            if not placed:
-                # Fall through: single 1×1 without connectivity guarantee
-                # (connectivity_repair will fix these)
-                candidate_1x1 = BrickPlacement(
-                    part_id=BRICK_PART_IDS[(1, 1)],
-                    color_id=color_id,
-                    x=x,
-                    y=y,
-                    z=z,
-                    width=1,
-                    length=1,
-                )
-                placements.append(candidate_1x1)
-                covered[x, z] = True
+                if not placed:
+                    # Fall through: single 1×1 without connectivity guarantee
+                    # (connectivity_repair will fix these)
+                    candidate_1x1 = BrickPlacement(
+                        part_id=BRICK_PART_IDS[(1, 1)],
+                        color_id=color_id,
+                        x=x,
+                        y=y,
+                        z=z,
+                        width=1,
+                        length=1,
+                    )
+                    placements.append(candidate_1x1)
+                    covered[x, z] = True
 
     # Final connectivity repair pass, then tile the top surface
     placements = connectivity_repair(placements)

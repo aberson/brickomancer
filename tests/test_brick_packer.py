@@ -248,6 +248,75 @@ class TestPack:
 
 
 # ---------------------------------------------------------------------------
+# TestMasonryInterlocking
+# ---------------------------------------------------------------------------
+
+
+class TestMasonryInterlocking:
+    def test_even_odd_layers_have_different_x_seam_sets(self):
+        """Odd layers should have different seam positions than even layers."""
+        voxels = np.ones((6, 2, 2), dtype=bool)
+        result = pack(voxels)
+
+        def seam_set(layer: int) -> frozenset[int]:
+            return frozenset(bp.x + bp.width for bp in result if bp.y == layer)
+
+        even_seams = seam_set(0)
+        odd_seams = seam_set(1)
+        assert even_seams != odd_seams, (
+            f"Even and odd layers have the same seam set {even_seams!r}; "
+            "masonry interlocking is not working"
+        )
+
+    def test_odd_layer_has_multi_stud_brick_starting_at_x1(self):
+        """After pre-pass places 1×1 at x=0, main scan should place a wide brick at x=1."""
+        voxels = np.ones((6, 2, 2), dtype=bool)
+        result = pack(voxels)
+
+        odd_layer = [bp for bp in result if bp.y == 1]
+        # Confirm pre-pass placed a 1×1 at x=0 in at least one Z row
+        has_starter = any(bp.x == 0 and bp.width == 1 for bp in odd_layer)
+        assert has_starter, "Pre-pass should place a 1×1 starter at x=0 in odd layer"
+        # Confirm at least one multi-stud brick starts at x=1
+        has_wide_at_x1 = any(bp.x == 1 and bp.width > 1 for bp in odd_layer)
+        assert has_wide_at_x1, (
+            "After pre-pass at x=0, main scan should produce a multi-stud brick starting at x=1"
+        )
+
+    def test_no_all_1x1_layer_on_wide_arm(self):
+        """An 8-wide grid should have multi-stud bricks in every layer."""
+        voxels = np.ones((8, 2, 4), dtype=bool)
+        result = pack(voxels)
+
+        for layer in range(2):
+            layer_bricks = [bp for bp in result if bp.y == layer]
+            all_1x1 = all(bp.width == 1 and bp.length == 1 for bp in layer_bricks)
+            assert not all_1x1, (
+                f"Layer {layer} consists entirely of 1×1 bricks; "
+                "packer should produce multi-stud bricks on a wide arm"
+            )
+
+    def test_abab_layer_pattern(self):
+        """Even layers should match each other and odd layers should match each other."""
+        voxels = np.ones((6, 4, 4), dtype=bool)
+        result = pack(voxels)
+
+        def seam_set(layer: int) -> frozenset[int]:
+            return frozenset(bp.x + bp.width for bp in result if bp.y == layer)
+
+        s0 = seam_set(0)
+        s1 = seam_set(1)
+        s2 = seam_set(2)
+        s3 = seam_set(3)
+
+        assert s0 == s2, f"Even layers must match: layer0={s0!r}, layer2={s2!r}"
+        assert s1 == s3, f"Odd layers must match: layer1={s1!r}, layer3={s3!r}"
+        assert s0 != s1, (
+            f"Even and odd layers must differ (interlocking): layer0={s0!r}, layer1={s1!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # sequence_steps
 # ---------------------------------------------------------------------------
 
