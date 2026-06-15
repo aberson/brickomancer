@@ -271,19 +271,19 @@ def pack(
         # Footprint of all bricks already placed in layer y-1
         below_fps: set[tuple[int, int]] = _collect_footprints(placements, y - 1) if y > 0 else set()
 
-        # Masonry offset: odd layers start the scan 1 stud into X to achieve
-        # interlocking.  We scan [x_offset..X) first then [0..x_offset) so
-        # every position is still visited and no voxel is skipped.
-        x_offset = 1 if (y % 2 == 1) else 0
+        # 4-period masonry: unique (x_offset, z_offset, scan_z_first) per phase
+        # so no two layers two courses apart share the same brick layout,
+        # breaking the A→B→A→B column-stack cycle.
+        phase = y % 4
+        x_offset = 1 if phase in (1, 3) else 0
+        z_offset = 1 if phase in (2, 3) else 0
+        scan_z_first = phase in (1, 3)
         x_order = list(range(x_offset, X)) + list(range(0, x_offset))
-
-        # Cross-bond scan order: even layers scan X-outer (bricks extend in X),
-        # odd layers scan Z-outer so Z-extending brick orientations get greedy
-        # priority, producing a running-bond pattern instead of column stacking.
-        if y % 2 == 1:
-            scan_positions = [(x, z) for z in range(Z) for x in x_order]
+        z_order = list(range(z_offset, Z)) + list(range(0, z_offset))
+        if scan_z_first:
+            scan_positions = [(x, z) for z in z_order for x in x_order]
         else:
-            scan_positions = [(x, z) for x in x_order for z in range(Z)]
+            scan_positions = [(x, z) for x in x_order for z in z_order]
 
         for x, z in scan_positions:
             if covered[x, z] or not grid[x, y, z]:
@@ -291,7 +291,7 @@ def pack(
 
             placed = False
             for w, ln in brick_set:
-                if y % 2 == 1 and w != ln and (ln, w) in BRICK_PART_IDS:
+                if scan_z_first and w != ln and (ln, w) in BRICK_PART_IDS:
                     orientations: list[tuple[int, int]] = [(ln, w), (w, ln)]
                 else:
                     orientations = [(w, ln)]
@@ -299,10 +299,7 @@ def pack(
                         orientations.append((ln, w))
 
                 for bw, bl in orientations:
-                    # On odd layers try the scan position first (which already
-                    # incorporates x_offset masonry shift), then fall back to
-                    # x-half so the shifted position takes greedy priority.
-                    if y % 2 == 1 and bw > 1:
+                    if scan_z_first and bw > 1:
                         half = bw // 2
                         starts = [s for s in [x, x - half] if s >= 0]
                     else:
