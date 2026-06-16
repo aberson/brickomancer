@@ -134,7 +134,7 @@ def _remove_isolated_pillars(placements: list[BrickPlacement]) -> list[BrickPlac
     else:
         cx, cz, max_radial = 0.0, 0.0, 0.0
 
-    extremity_threshold = 0.6 * max_radial
+    extremity_threshold = 0.5 * max_radial
 
     column_stacks: dict[tuple[int, int, int, int], list[int]] = {}
     for bp in placements:
@@ -194,7 +194,7 @@ def _remove_isolated_pillars(placements: list[BrickPlacement]) -> list[BrickPlac
 
     isolated_xz: set[tuple[int, int]] = set()
     for sx, sz in global_xz:
-        if len(xz_layer_count[(sx, sz)]) < 2:
+        if len(xz_layer_count[(sx, sz)]) < 1:
             continue
         neighbors = [(-1, 0), (1, 0), (0, -1), (0, 1)]
         if not any((sx + dx, sz + dz) in global_xz for dx, dz in neighbors):
