@@ -402,8 +402,8 @@ class TestWriteLdr:
             content = open(path, encoding="utf-8").read()
             lines = content.splitlines()
             step_indices = [i for i, line in enumerate(lines) if line.strip() == "0 STEP"]
-            # 17 bricks → 3 batches (8, 8, 1) → 3 STEP markers (one per batch)
-            assert len(step_indices) == 3
+            # 17 bricks → 3 batches (8, 8, 1) → 3 STEP markers (one per batch) + 1 cover page STEP
+            assert len(step_indices) == 4
 
     def test_trailing_step_marker_present(self):
         """The last batch must be followed by 0 STEP so LPub3D renders it."""
@@ -412,7 +412,8 @@ class TestWriteLdr:
             path = os.path.join(tmpdir, "laststep.ldr")
             write_ldr(bricks, path)
             content = open(path, encoding="utf-8").read()
-            assert content.count("0 STEP") == 1
+            # 1 build batch STEP + 1 cover page STEP
+            assert content.count("0 STEP") == 2
 
     def test_step_marker_after_exactly_8(self):
         """16 bricks → exactly 2 STEP markers, one per batch."""
@@ -421,7 +422,8 @@ class TestWriteLdr:
             path = os.path.join(tmpdir, "mid.ldr")
             write_ldr(bricks, path)
             content = open(path, encoding="utf-8").read()
-            assert content.count("0 STEP") == 2
+            # 2 build batch STEPs + 1 cover page STEP
+            assert content.count("0 STEP") == 3
 
 
 

@@ -132,6 +132,7 @@ def write_ldr(
         "0 Author: Brickomancer",
         f"0 Tier: {tier_name}",
         "",
+        "0 STEP",  # cover page step
     ]
 
     for step_bricks in steps:
