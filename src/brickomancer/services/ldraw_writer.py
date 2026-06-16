@@ -1,4 +1,4 @@
-"""LDraw writer â€” converts BrickPlacements to .ldr file format.
+"""LDraw writer — converts BrickPlacements to .ldr file format.
 
 Public API
 ----------
