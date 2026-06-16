@@ -315,6 +315,6 @@ def advisor_engine(
 
     report_path = runs_dir / f"{file_prefix}_advisor_reports.json"
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    log.info("advisor_engine: saved report → %s", report_path)
+    log.info("advisor_engine: saved report -> %s", report_path)
 
     return report

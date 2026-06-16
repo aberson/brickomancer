@@ -65,13 +65,13 @@ def pipeline_executor(
 
     pdf_path = runs_dir / f"{file_prefix}_instructions.pdf"
     pdf_path.write_bytes(pdf_bytes)
-    log.info("pipeline_executor: PDF saved → %s (%d bytes)", pdf_path, len(pdf_bytes))
+    log.info("pipeline_executor: PDF saved -> %s (%d bytes)", pdf_path, len(pdf_bytes))
 
     preview_src = tmp_dir / uuid_part / "suggestion_0_preview.png"
     preview_dst = runs_dir / f"{file_prefix}_preview.png"
     if preview_src.exists():
         shutil.copy2(preview_src, preview_dst)
-        log.info("pipeline_executor: Preview PNG copied → %s", preview_dst)
+        log.info("pipeline_executor: Preview PNG copied -> %s", preview_dst)
         preview_png_path = str(preview_dst)
     else:
         log.warning("pipeline_executor: Preview PNG not found at %s — continuing without it.", preview_src)
