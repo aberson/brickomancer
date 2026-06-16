@@ -1,4 +1,4 @@
-"""LDraw writer â€” converts BrickPlacements to .ldr file format.
+"""LDraw writer — converts BrickPlacements to .ldr file format.
 
 Public API
 ----------
@@ -51,14 +51,14 @@ _TILE_PART_ID_SET: frozenset[str] = frozenset(TILE_PART_IDS.values())
 
 def _to_ldu(bp: BrickPlacement) -> tuple[int, int, int]:
     """Convert stud coordinates to LDraw units."""
-    x = bp.x * _STUD_LDU
+    x = bp.x * _STUD_LDU + (bp.width - 1) * 10
     if bp.part_id in _TILE_PART_ID_SET:
         # Tiles are 8 LDU tall; they sit on the studs of the layer below.
         # Correct Y = (y-1)*-24 - 8 = y*-24 + 16
         y = bp.y * -_LAYER_LDU + (_LAYER_LDU - _TILE_HEIGHT_LDU)
     else:
         y = bp.y * -_LAYER_LDU  # negate: voxel y-up -> LDraw y-down
-    z = bp.z * _STUD_LDU
+    z = bp.z * _STUD_LDU + (bp.length - 1) * 10
     return x, y, z
 
 
@@ -112,6 +112,7 @@ def write_ldr(
     so LPub3D renders each step as a separate page.
 
     LPub3D meta commands emitted:
+    - Header: ``0 !LPUB FADE_STEPS ENABLED TRUE`` and ``0 !LPUB FADE_STEPS SETUP OPACITY 50``.
     - Immediately after final ``0 STEP``: ``0 !LPUB INSERT BOM``.
 
     Args:
@@ -130,6 +131,8 @@ def write_ldr(
         f"0 Name: {filename}",
         "0 Author: Brickomancer",
         f"0 Tier: {tier_name}",
+        "0 !LPUB FADE_STEPS ENABLED TRUE",
+        "0 !LPUB FADE_STEPS SETUP OPACITY 50",
         "",
     ]
 
