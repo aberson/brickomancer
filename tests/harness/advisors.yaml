@@ -438,3 +438,71 @@ advisors:
         description: "Vaguely similar color but shape clearly inferior to gold"
       - score: 8
         description: "Correct star silhouette, yellow color, comparable scale to gold"
+
+  - id: warnings_judge
+    name: "Warnings Judge"
+    reads: [scores_history]
+    prompt: |
+      You are a meta-evaluator monitoring the health of an automated hill-climbing loop that
+      improves a LEGO instruction PDF generator. You will receive a table of recent iteration
+      history showing, for each iteration: the iteration number, the average raw quality score,
+      the test result, the dimension targeted, and a one-sentence summary of the change attempted.
+
+      Your task is to evaluate the HEALTH of the improvement loop itself — not the quality of
+      any single build. Score 10 = perfectly healthy, 0 = the loop is broken or stuck.
+
+      ## What to evaluate
+
+      **Oscillation** — Is the same change being added and then reverted repeatedly?
+      Look for a dimension+approach that appears as PASS_COMMITTED in one iteration and
+      SKIPPED_REVERT in the next (or vice versa). Two or more oscillation cycles is a red flag.
+
+      **Dimension neglect** — Is the loop ignoring a consistently low-scoring dimension while
+      repeatedly targeting dimensions that are already acceptable?
+
+      **Regression** — Is avg_raw trending downward across the last 5+ iterations, suggesting
+      committed changes are making things worse overall?
+
+      **Revert storm** — Are 3 or more consecutive iterations ending in SKIPPED_REVERT or
+      SKIPPED_PARSE_ERROR? This means the developer agent is repeatedly failing to produce
+      valid, passing changes.
+
+      **Stagnation** — Has avg_raw not improved at all across the last 8+ iterations despite
+      multiple PASS_COMMITTED entries? Committed changes that don't move the needle suggest
+      the wrong files are being targeted.
+
+      **Healthy signs** — avg_raw trending up, PASS_COMMITTED results leading to score
+      increases, variety of dimensions targeted, no repeating revert patterns.
+
+      ## Scoring rubric (0–10)
+      0–2  Critical. Loop is clearly broken: oscillation confirmed, revert storm in progress,
+           or avg_raw regressing sharply despite commits. Immediate intervention needed.
+      3–4  Concerning. One or two worrying patterns visible (e.g. 2 consecutive reverts on
+           the same approach, slight avg_raw decline). The judge should weigh these findings
+           heavily when selecting the next change.
+      5–6  Neutral. Mixed signals. Some reverts but also progress. No clear systemic pattern.
+           Normal variance in an improvement loop.
+      7–8  Healthy. Mostly PASS_COMMITTED results, avg_raw stable or improving, variety of
+           dimensions targeted. Minor hiccups only.
+      9–10 Excellent. Clear upward trend in avg_raw, every committed change helps, no
+           pathological patterns detected.
+
+      ## Confidence guidance
+      Set confidence to 1.0 when there are 5 or more iterations of history to analyse.
+      Set confidence to 0.5 when there are 2–4 iterations (too few to detect trends).
+      Set confidence to 0.0 when history is empty or contains only dry-run entries.
+
+      ## Output
+      Output ONLY valid JSON on a single line with no additional text, markdown, or explanation:
+      {"score": <int 0-10>, "confidence": <float 0.0-1.0>, "findings": ["<finding1>", "<finding2>"]}
+
+      Each finding must name the specific pattern observed with evidence from the history table
+      (e.g. "Oscillation: pdf_completeness committed iter 17, reverted iter 18, committed iter 19").
+      List 2–5 findings. If the loop is healthy, findings should say so explicitly.
+    anchors:
+      - score: 2
+        description: "Critical: oscillation confirmed or revert storm in progress"
+      - score: 5
+        description: "Neutral: some reverts, no clear trend either way"
+      - score: 8
+        description: "Healthy: avg_raw improving, variety of dimensions, few reverts"

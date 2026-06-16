@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from tests.harness.run_harness import pipeline_executor
+from tests.harness.pipeline import pipeline_executor
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -95,8 +95,8 @@ class TestPipelineExecutorHappyPath:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.post.side_effect = [gen_resp, instr_resp]
 
-        with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
-            result = pipeline_executor(tmp_path, "test", _INPUT_IMAGE, 5)
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
+            result = pipeline_executor("http://localhost:8005", tmp_path, tmp_path, "test", _INPUT_IMAGE, 5)
 
         assert set(result.keys()) == {
             "suggestion_id",
@@ -117,8 +117,8 @@ class TestPipelineExecutorHappyPath:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.post.side_effect = [gen_resp, instr_resp]
 
-        with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
-            result = pipeline_executor(tmp_path, "test", _INPUT_IMAGE, 5)
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
+            result = pipeline_executor("http://localhost:8005", tmp_path, tmp_path, "test", _INPUT_IMAGE, 5)
 
         pdf_path = Path(result["pdf_path"])
         assert pdf_path.exists()
@@ -133,8 +133,8 @@ class TestPipelineExecutorHappyPath:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.post.side_effect = [gen_resp, instr_resp]
 
-        with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
-            result = pipeline_executor(tmp_path, "test", _INPUT_IMAGE, 5)
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
+            result = pipeline_executor("http://localhost:8005", tmp_path, tmp_path, "test", _INPUT_IMAGE, 5)
 
         assert result["suggestion_id"] == SUGGESTION_ID
         assert result["uuid_part"] == UUID_PART
@@ -148,8 +148,8 @@ class TestPipelineExecutorHappyPath:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.post.side_effect = [gen_resp, instr_resp]
 
-        with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
-            result = pipeline_executor(tmp_path, "test", _INPUT_IMAGE, 5)
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
+            result = pipeline_executor("http://localhost:8005", tmp_path, tmp_path, "test", _INPUT_IMAGE, 5)
 
         assert UUID_PART in result["ldr_path"]
         assert result["ldr_path"].endswith("suggestion_0.ldr")
@@ -174,11 +174,8 @@ class TestPipelineExecutorHappyPath:
         iteration_out = tmp_path / "iteration_1"
         iteration_out.mkdir()
 
-        with (
-            patch("tests.harness.run_harness.httpx.Client", return_value=mock_client),
-            patch("tests.harness.run_harness.TMP_DIR_PATH", fake_tmp),
-        ):
-            result = pipeline_executor(iteration_out, "test", _INPUT_IMAGE, 5)
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
+            result = pipeline_executor("http://localhost:8005", fake_tmp, iteration_out, "test", _INPUT_IMAGE, 5)
 
         copied = iteration_out / "test_preview.png"
         assert copied.exists()
@@ -206,9 +203,9 @@ class TestPipelineExecutorNoCompact:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.post.return_value = gen_resp
 
-        with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
             with pytest.raises(ValueError, match="No compact suggestion"):
-                pipeline_executor(tmp_path, "test", _INPUT_IMAGE, 5)
+                pipeline_executor("http://localhost:8005", tmp_path, tmp_path, "test", _INPUT_IMAGE, 5)
 
     def test_raises_when_suggestions_empty(self, tmp_path: Path) -> None:
         gen_resp = _make_generate_response([])
@@ -218,9 +215,9 @@ class TestPipelineExecutorNoCompact:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.post.return_value = gen_resp
 
-        with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
             with pytest.raises(ValueError, match="No compact suggestion"):
-                pipeline_executor(tmp_path, "test", _INPUT_IMAGE, 5)
+                pipeline_executor("http://localhost:8005", tmp_path, tmp_path, "test", _INPUT_IMAGE, 5)
 
 
 class TestPipelineExecutorHTTPErrors:
@@ -239,9 +236,9 @@ class TestPipelineExecutorHTTPErrors:
         )
         mock_client.post.return_value = gen_resp
 
-        with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
             with pytest.raises(httpx.HTTPStatusError):
-                pipeline_executor(tmp_path, "test", _INPUT_IMAGE, 5)
+                pipeline_executor("http://localhost:8005", tmp_path, tmp_path, "test", _INPUT_IMAGE, 5)
 
     def test_timeout_exception_propagates(self, tmp_path: Path) -> None:
         mock_client = MagicMock()
@@ -249,9 +246,9 @@ class TestPipelineExecutorHTTPErrors:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.post.side_effect = httpx.TimeoutException("timed out")
 
-        with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
             with pytest.raises(httpx.TimeoutException):
-                pipeline_executor(tmp_path, "test", _INPUT_IMAGE, 5)
+                pipeline_executor("http://localhost:8005", tmp_path, tmp_path, "test", _INPUT_IMAGE, 5)
 
     def test_http_error_on_instructions_call(self, tmp_path: Path) -> None:
         gen_resp = _make_generate_response(_three_suggestions())
@@ -264,9 +261,9 @@ class TestPipelineExecutorHTTPErrors:
             httpx.HTTPStatusError("503", request=MagicMock(), response=MagicMock()),
         ]
 
-        with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
             with pytest.raises(httpx.HTTPStatusError):
-                pipeline_executor(tmp_path, "test", _INPUT_IMAGE, 5)
+                pipeline_executor("http://localhost:8005", tmp_path, tmp_path, "test", _INPUT_IMAGE, 5)
 
 
 class TestPipelineExecutorMissingPreview:
@@ -288,12 +285,9 @@ class TestPipelineExecutorMissingPreview:
         iteration_out = tmp_path / "iteration_1"
         iteration_out.mkdir()
 
-        with (
-            patch("tests.harness.run_harness.httpx.Client", return_value=mock_client),
-            patch("tests.harness.run_harness.TMP_DIR_PATH", fake_tmp),
-        ):
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
             # Must not raise
-            result = pipeline_executor(iteration_out, "test", _INPUT_IMAGE, 5)
+            result = pipeline_executor("http://localhost:8005", fake_tmp, iteration_out, "test", _INPUT_IMAGE, 5)
 
         # PDF should still be saved
         assert Path(result["pdf_path"]).exists()
@@ -320,11 +314,10 @@ class TestPipelineExecutorMissingPreview:
         iteration_out.mkdir()
 
         with (
-            patch("tests.harness.run_harness.httpx.Client", return_value=mock_client),
-            patch("tests.harness.run_harness.TMP_DIR_PATH", fake_tmp),
+            patch("tests.harness.pipeline.httpx.Client", return_value=mock_client),
             caplog.at_level(logging.WARNING, logger="harness"),
         ):
-            pipeline_executor(iteration_out, "test", _INPUT_IMAGE, 5)
+            pipeline_executor("http://localhost:8005", fake_tmp, iteration_out, "test", _INPUT_IMAGE, 5)
 
         assert len(caplog.records) >= 1
         assert any("Preview PNG not found" in rec.message for rec in caplog.records)
@@ -342,6 +335,6 @@ class TestPipelineExecutorEmptyPDF:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.post.side_effect = [gen_resp, instr_resp]
 
-        with patch("tests.harness.run_harness.httpx.Client", return_value=mock_client):
+        with patch("tests.harness.pipeline.httpx.Client", return_value=mock_client):
             with pytest.raises(ValueError, match="empty PDF bytes"):
-                pipeline_executor(tmp_path, "test", _INPUT_IMAGE, 5)
+                pipeline_executor("http://localhost:8005", tmp_path, tmp_path, "test", _INPUT_IMAGE, 5)

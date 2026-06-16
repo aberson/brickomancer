@@ -79,9 +79,13 @@ brickomancer/
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes + nine harness runs (2026-06-13/14/15). Harness fully operational: 8/8 advisors (color_match replaces part_variety; reference_fidelity added using gold dataset star), weighted developer-agent loop, pytest gate (unit tests only), avg-raw quality gate (≥ 8.0). 316 unit tests passing, 0 type errors, 0 lint violations.
+Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes + nine harness runs (2026-06-13/14/15). **Harness refactored (2026-06-15): judge+applier architecture.** 340 unit tests passing, 0 type errors, 0 lint violations.
 
-**4 harness robustness improvements (bcb4382):** (1) history injection — last 10 score rows prepended to every developer prompt so agents don't repeat reverted changes or undo committed ones; (2) LPub3D mini-reference — exact meta-command syntax injected for ldraw-touching dimensions; (3) parse-error retry — one retry on unparseable JSON before SKIPPED_PARSE_ERROR; (4) test-failure retry — failing test output fed back to developer agent for one fix attempt.
+**Harness architecture:** `run_harness.py` is a thin entry point. Submodules: `pipeline.py`, `advisor.py`, `server.py`, `judge.py`, `applier.py`. Loop: pipeline → 9 advisors (including `warnings_judge`) → quality gate → `judge` (produces structured change brief) → `apply` (Claude subprocess, pytest gate, commit or revert). `developer.py` deleted.
+
+**Judge output schema:** `{dimension, file_path, rationale, approach_description, functions_to_modify, constraints_to_preserve, anti_patterns_to_avoid, blocking_issues, confidence}`. `blocking_issues` non-empty → applier logs SKIPPED_BLOCKED and skips iteration.
+
+**`warnings_judge` (9th advisor):** reads `scores_history` (last 15 rows); detects oscillation, revert storms, regression, stagnation; score 10=healthy, 0=crisis.
 
 **Committed improvements to date (cumulative):**
 - 8bd95b3: axis transpose (star face → XZ plane)
@@ -91,39 +95,34 @@ Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build 
 - 96ffeb8: replaced TripoSR with 2D silhouette extrusion
 - 6d67628: Y-layer-first step sequencing in ldraw_writer
 - acf8ca6: trailing `0 STEP` after every step including the last
-- (shape-quality plan): sparse-fill guard, 2×2 OR-pool, integration test, axis-convention guard (315 tests)
-- d4405b0: BOM page insert (`!LPUB INSERT BOM`)
-- 6d6f8a2: BOM position fix (after final `0 STEP`)
-- 7d202dc: brick_packer alternating orientation on odd layers
-- 2c05feb: tile decomposition (non-standard brick sizes)
-- 90efe32: removed malformed FADE STEPS header
-- 0533e5e: LDView camera latitude 30°→45°, 800×600
-- (run 8, 15 commits): COVER_PAGE, FADE_STEPS, HIGHLIGHT_STEP meta commands; subject-color masking before KMeans; Lab palette cache; secondary color by lightness contrast; OR-pool elimination; alpha threshold 127; camera latitude 65°; masonry Z-scan alternation
-- (run 9, 16 commits — partial regression): oscillation removed run-8 LPub3D meta commands; net result near run-7 baseline
-- bcb4382: 4 harness robustness improvements (history injection, LPub3D reference, retries)
-- 689f776: two-stage OR-pool downsampling in _extrude_silhouette (LANCZOS at 20 studs → OR-pool to max(height_studs, 5)); fixes shape_fidelity root cause (20-stud flat slab invisible from camera angle)
+- (shape-quality plan): sparse-fill guard, 2×2 OR-pool, integration test, axis-convention guard
+- d4405b0/6d6f8a2: BOM page insert + position fix
+- 7d202dc/2c05feb/90efe32/0533e5e: alternating orientation, tile decomposition, FADE STEPS fix, camera 45°
+- (run 8, 15 commits): COVER_PAGE, FADE_STEPS, HIGHLIGHT_STEP; subject-color masking; Lab palette cache; secondary color by lightness; camera 65°; masonry Z-scan
+- (run 9 — partial regression): oscillation removed run-8 LPub3D meta commands
+- bcb4382: history injection, LPub3D reference, parse-error retry, test-failure retry
+- 689f776: two-stage OR-pool downsampling (shape_fidelity root cause fix)
+- (harness refactor): judge+applier architecture, warnings_judge, 340 tests
 
-**Current dim scores (run 9, iter 20 state — pre-run-10):**
-- pdf_completeness: 0 — LPub3D meta commands removed by run-9 oscillation; run 10 will re-add them
+**Pre-run-10 dim scores (run 9 end state):**
+- pdf_completeness: 0 — LPub3D meta commands removed by run-9 oscillation
 - instruction_clarity: 1
-- build_stability: 2 (stubborn; 1×1 pillars at star arm tips; smaller footprint from 689f776 should help)
-- shape_fidelity: 3 (root cause fixed in 689f776; expect improvement in run 10)
-- reference_fidelity: 4
-- aesthetics: 5–6
-- color_match: 7
-- technical_validity: 5–9 (varies by run)
+- build_stability: 2 (1×1 pillars at star arm tips)
+- shape_fidelity: 3 (root cause fixed in 689f776)
+- reference_fidelity: 4; aesthetics: 5–6; color_match: 7; technical_validity: 5–9
 
-**Harness image-passing note:** `claude -p` does not support `--image`. Images (preview PNG, input image) are passed as absolute paths in the prompt with "Use your Read tool to view this image." LDR content truncated to 400 lines before embedding. Advisor timeout 240s, developer timeout 600s.
+**Harness image-passing note:** `claude -p` does not support `--image`. Images passed as absolute paths in prompt with "Use your Read tool to view this image." LDR content truncated to 400 lines. Advisor timeout 240s, judge/applier timeout 300s/600s.
 
-**`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as Windows user environment variable (not `.env` file). Inherited by the desktop `.bat` launcher automatically. When running from PowerShell/Bash tools, load it explicitly: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`. The Bash tool does NOT inherit Windows user env vars — always launch harness from PowerShell.
+**`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as Windows user environment variable (not `.env` file). Inherited by `.bat` launcher. Load manually in PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`. The Bash tool does NOT inherit Windows user env vars — always launch harness from PowerShell.
 
-**pytest note:** `uv run pytest -q` alone will fail if a server is running on port 8000 (integration smoke tests hit it). Use `uv run pytest -q --ignore=tests/integration` for the clean gate. The harness always uses `--ignore=tests/integration`. Integration gate (shape-fidelity star test): `BRICKOMANCER_INTEGRATION=1 uv run pytest tests/integration/ -v`.
+**pytest note:** Use `uv run pytest -q --ignore=tests/integration` for the clean gate. Harness always uses `--ignore=tests/integration`. Integration gate: `BRICKOMANCER_INTEGRATION=1 uv run pytest tests/integration/ -v`.
 
-**Next action:**
-
-**Investigate:** Review `tests/harness/scores.jsonl` last 5 rows and the most recent `tests/harness/runs/*_advisor_reports.json` to understand build_stability findings in detail. Post findings and STOP — wait for user response before proceeding.
-
-**After user approval:** Run `/run-harness --iterations 20`.
+**Next action:** Run harness 20 iterations:
+```powershell
+$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")
+$env:PATH += ";C:\Tools\LPub3D"
+uv run python tests/harness/run_harness.py --iterations 20
+```
 
 ## Environment requirements
 

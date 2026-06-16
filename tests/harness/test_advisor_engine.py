@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from tests.harness.run_harness import (
+from tests.harness.advisor import (
     _compute_weights,
     _extract_parts_list,
     _normalize_scores,
@@ -26,6 +26,7 @@ from tests.harness.run_harness import (
     _validate_advisor_result,
     advisor_engine,
 )
+from tests.harness.run_harness import ADVISORS_YAML, GOLD_STEP_FINAL_PATH
 
 # ---------------------------------------------------------------------------
 # _normalize_scores
@@ -199,8 +200,8 @@ FAKE_JSON = '{"score": 7, "confidence": 0.8, "findings": ["looks solid"]}'
 
 
 class TestAdvisorEngineIntegration:
-    def test_calls_all_eight_advisors_and_saves_report(self, tmp_path: Path) -> None:
-        """advisor_engine must invoke subprocess.run 8 times and write advisor_reports.json."""
+    def test_calls_all_nine_advisors_and_saves_report(self, tmp_path: Path) -> None:
+        """advisor_engine must invoke subprocess.run 9 times (8 + warnings_judge) and write report."""
         iteration_dir = tmp_path / "iteration_1"
         iteration_dir.mkdir()
 
@@ -217,21 +218,25 @@ class TestAdvisorEngineIntegration:
         mock_proc.stdout = FAKE_JSON
         mock_proc.stderr = ""
 
-        patch_target = "tests.harness.run_harness.subprocess.run"
+        patch_target = "tests.harness.advisor.subprocess.run"
         with patch.dict("os.environ", {"CLAUDE_CODE_OAUTH_TOKEN": "fake-token"}):
             with patch(patch_target, return_value=mock_proc) as mock_run:
-                result = advisor_engine(iteration_dir, "test", fake_state)
+                result = advisor_engine(
+                    ADVISORS_YAML, GOLD_STEP_FINAL_PATH, iteration_dir, "test", fake_state,
+                    scores_jsonl=tmp_path / "scores.jsonl",
+                )
 
-        assert mock_run.call_count == 8
+        assert mock_run.call_count == 9
 
         report_path = iteration_dir / "test_advisor_reports.json"
         assert report_path.exists(), "advisor_reports.json must be written"
 
         saved = json.loads(report_path.read_text())
-        assert len(saved["scores_raw"]) == 8
-        assert len(saved["scores_normalized"]) == 8
-        assert len(saved["weights"]) == 8
-        assert len(saved["advisors"]) == 8
+        assert len(saved["scores_raw"]) == 9
+        assert len(saved["scores_normalized"]) == 9
+        assert len(saved["weights"]) == 9
+        assert len(saved["advisors"]) == 9
+        assert "warnings_judge" in saved["advisors"]
         assert "avg_normalized" in saved
 
         assert result["avg_normalized"] == saved["avg_normalized"]
@@ -251,10 +256,13 @@ class TestAdvisorEngineIntegration:
 
         with patch.dict("os.environ", {"CLAUDE_CODE_OAUTH_TOKEN": "fake-token"}):
             with patch(
-                "tests.harness.run_harness.subprocess.run",
+                "tests.harness.advisor.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=30),
             ):
-                result = advisor_engine(iteration_dir, "test", fake_state)
+                result = advisor_engine(
+                    ADVISORS_YAML, GOLD_STEP_FINAL_PATH, iteration_dir, "test", fake_state,
+                    scores_jsonl=tmp_path / "scores.jsonl",
+                )
 
         assert math.isclose(result["avg_normalized"], 5.0), (
             f"Expected 5.0 but got {result['avg_normalized']}"

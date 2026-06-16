@@ -81,10 +81,10 @@ def test_no_duplicate_advisor_ids(advisors_doc: dict[str, Any]) -> None:
     assert len(ids) == len(set(ids)), f"Duplicate advisor IDs found: {ids}"
 
 
-def test_advisor_count_is_exactly_eight(advisors_doc: dict[str, Any]) -> None:
-    """Exactly 8 advisors are defined."""
-    assert len(advisors_doc["advisors"]) == 8, (
-        f"Expected 8 advisors, found {len(advisors_doc['advisors'])}"
+def test_advisor_count_is_exactly_nine(advisors_doc: dict[str, Any]) -> None:
+    """Exactly 9 advisors are defined (8 quality + warnings_judge)."""
+    assert len(advisors_doc["advisors"]) == 9, (
+        f"Expected 9 advisors, found {len(advisors_doc['advisors'])}"
     )
 
 

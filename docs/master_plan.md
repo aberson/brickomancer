@@ -750,3 +750,49 @@ The 28 LEGO colors reliably available in standard brick sizes via Pick-a-Brick a
 | Lavender | 31 | CDA4DE |
 | Medium Lavender | 30 | A06EB9 |
 | Nougat | 18 | BB805A |
+
+---
+
+## Harness Refactor — Judge+Applier Architecture
+
+**All issues closed. 340/340 tests passing. Zero type errors. Zero lint violations.**
+
+### What was built
+
+- **Submodule split:** `run_harness.py` (~1019 lines) refactored into `pipeline.py`, `advisor.py`, `server.py`, `judge.py`, `applier.py`; `run_harness.py` is now a thin ~200-line entry point
+- **`warnings_judge` advisor (#9):** reads `scores_history` (last 15 rows from `scores.jsonl`); score 10=healthy, 0=crisis; detects oscillation, revert storms, dimension neglect, regression, stagnation
+- **`_format_scores_history`:** formats last N rows from `scores.jsonl` as compact table; injected into `warnings_judge` prompt via `reads: [scores_history]` in advisors.yaml
+- **`judge.py`:** reads all 9 advisor reports + scores history; produces structured change brief; one retry on parse failure; logs blocking_issues; `DIMENSION_SOURCE_FILES` dict maps dimensions to source files
+- **`applier.py`:** receives judge brief; calls Claude subprocess with full brief context; runs pytest; commits on pass or reverts on failure; one fix-retry on pytest failure; commit msg: `"harness iter {N}: improve {dim} via judge"`
+- **`run_harness.py` loop:** pipeline → advisor_engine → quality gate → judge → apply → append scores; server restart after PASS_COMMITTED; `scores.jsonl` gains `judge_rationale` and `judge_blocking` fields
+- **`developer.py` deleted:** stochastic hill-climbing replaced entirely by judge+applier
+- **Test coverage:** `test_judge.py` (new, 13 tests), `test_applier.py` (new, 10 tests); `test_advisor_engine.py` updated (9 advisors, scores_jsonl param); `test_advisors.py` updated (count=9)
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `tests/harness/run_harness.py` | Rewritten as thin entry point; judge+applier loop; `judge_rationale`/`judge_blocking` in scores |
+| `tests/harness/pipeline.py` | New — `pick_input_image`, `pipeline_executor` extracted from run_harness |
+| `tests/harness/advisor.py` | New — advisor helpers + `advisor_engine` extracted; `_format_scores_history`; `scores_jsonl` param |
+| `tests/harness/server.py` | New — `start_server`, `wait_for_server`, `terminate_server` extracted |
+| `tests/harness/judge.py` | New — `_validate_judge_decision`, `_parse_judge_output`, `_format_advisor_report`, `_build_judge_prompt`, `judge` |
+| `tests/harness/applier.py` | New — `_parse_applier_output`, `_build_applier_prompt`, `apply` |
+| `tests/harness/advisors.yaml` | Added `warnings_judge` as 9th advisor with `reads: [scores_history]` |
+| `tests/harness/developer.py` | Deleted |
+| `tests/harness/test_judge.py` | New — 13 unit + integration tests |
+| `tests/harness/test_applier.py` | New — 10 unit + integration tests |
+| `tests/harness/test_advisor_engine.py` | Updated imports, 9-advisor assertions, `scores_jsonl` param |
+| `tests/harness/test_advisors.py` | Updated count assertion to 9 |
+| `tests/harness/test_developer_agent.py` | Deleted |
+
+### Fresh context notes
+
+| Item | Detail |
+|---|---|
+| Judge output schema | `{dimension, file_path, rationale, approach_description, functions_to_modify, constraints_to_preserve, anti_patterns_to_avoid, blocking_issues, confidence}` — all required except the lists which default to `[]` |
+| `blocking_issues` non-empty | Applier skips the iteration (logs `SKIPPED_BLOCKED`) — judge sets this when oscillation or other crisis detected |
+| `warnings_judge` score direction | 10=healthy, 0=crisis — consistent with other advisors; confidence=0 when no history yet |
+| `scores_jsonl` threading | Passed from `run_harness.py` → `advisor_engine` → `_run_single_advisor` (for `warnings_judge`) and separately to `judge` |
+| `LPUB3D_META_REFERENCE` | Defined in `judge.py`; imported by `applier.py`; injected into applier prompt when dimension touches LDraw/PDF |
+| Server port | Harness uses port 8005 (not 8000, which is the main dev server) |
