@@ -124,6 +124,7 @@ def apply(
             ["claude", "-p", prompt],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=APPLIER_TIMEOUT_S,
             env=env,
         )
@@ -150,7 +151,7 @@ def apply(
         try:
             retry = subprocess.run(
                 ["claude", "-p", retry_prompt],
-                capture_output=True, text=True, timeout=APPLIER_TIMEOUT_S, env=env,
+                capture_output=True, text=True, encoding="utf-8", timeout=APPLIER_TIMEOUT_S, env=env,
             )
             result_data = _parse_applier_output(retry.stdout.strip())
         except (subprocess.TimeoutExpired, OSError):
@@ -188,7 +189,7 @@ def apply(
         try:
             fix_proc = subprocess.run(
                 ["claude", "-p", fix_prompt],
-                capture_output=True, text=True, timeout=APPLIER_TIMEOUT_S, env=env,
+                capture_output=True, text=True, encoding="utf-8", timeout=APPLIER_TIMEOUT_S, env=env,
             )
             fix_data = _parse_applier_output(fix_proc.stdout.strip())
         except (subprocess.TimeoutExpired, OSError):

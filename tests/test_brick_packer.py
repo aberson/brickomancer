@@ -255,7 +255,7 @@ class TestPack:
 class TestMasonryInterlocking:
     def test_even_odd_layers_have_different_x_seam_sets(self):
         """Odd layers should have different seam positions than even layers."""
-        voxels = np.ones((6, 2, 2), dtype=bool)
+        voxels = np.ones((6, 2, 4), dtype=bool)
         result = pack(voxels)
 
         def seam_set(layer: int) -> frozenset[int]:

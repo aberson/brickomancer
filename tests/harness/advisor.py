@@ -232,6 +232,7 @@ def _run_single_advisor(
             ["claude", "-p", full_prompt],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout_s,
             env=env,
         )

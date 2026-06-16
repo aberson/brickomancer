@@ -227,6 +227,7 @@ def judge(
             ["claude", "-p", prompt],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=JUDGE_TIMEOUT_S,
             env=env,
         )
@@ -258,7 +259,7 @@ def judge(
         try:
             retry = subprocess.run(
                 ["claude", "-p", retry_prompt],
-                capture_output=True, text=True, timeout=JUDGE_TIMEOUT_S, env=env,
+                capture_output=True, text=True, encoding="utf-8", timeout=JUDGE_TIMEOUT_S, env=env,
             )
             decision = _parse_judge_output(retry.stdout.strip())
         except (subprocess.TimeoutExpired, OSError):
