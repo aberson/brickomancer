@@ -112,6 +112,52 @@ def _apply_surface_tiles(placements: list[BrickPlacement]) -> list[BrickPlacemen
     return result
 
 
+def _remove_isolated_pillars(placements: list[BrickPlacement]) -> list[BrickPlacement]:
+    occupied_by_layer: dict[int, set[tuple[int, int]]] = {}
+    for bp in placements:
+        if bp.y not in occupied_by_layer:
+            occupied_by_layer[bp.y] = set()
+        for sx, sz in _footprint(bp):
+            occupied_by_layer[bp.y].add((sx, sz))
+
+    pillar_layers: dict[tuple[int, int], list[int]] = {}
+    for bp in placements:
+        if bp.width == 1 and bp.length == 1:
+            key = (bp.x, bp.z)
+            if key not in pillar_layers:
+                pillar_layers[key] = []
+            pillar_layers[key].append(bp.y)
+
+    isolated: set[tuple[int, int]] = set()
+    for (x, z), layers in pillar_layers.items():
+        if len(layers) < 2:
+            continue
+        neighbors = [(x - 1, z), (x + 1, z), (x, z - 1), (x, z + 1)]
+        has_neighbor = any(
+            (nx, nz) in occupied_by_layer.get(y, set())
+            for y in layers
+            for nx, nz in neighbors
+        )
+        if not has_neighbor:
+            isolated.add((x, z))
+
+    if not isolated:
+        return placements
+
+    lowest_y: dict[tuple[int, int], int] = {
+        (x, z): min(pillar_layers[(x, z)]) for (x, z) in isolated
+    }
+
+    result: list[BrickPlacement] = []
+    for bp in placements:
+        if bp.width == 1 and bp.length == 1:
+            key = (bp.x, bp.z)
+            if key in isolated and bp.y != lowest_y[key]:
+                continue
+        result.append(bp)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Public helpers (also used by tests)
 # ---------------------------------------------------------------------------
@@ -366,6 +412,7 @@ def pack(
                     placements.append(candidate_1x1)
                     covered[x, z] = True
 
-    # Final connectivity repair pass, then tile the top surface
+    # Remove isolated 1x1 pillar columns, then repair connectivity, then tile the top surface
+    placements = _remove_isolated_pillars(placements)
     placements = connectivity_repair(placements)
     return _apply_surface_tiles(placements)
