@@ -173,27 +173,31 @@ def test_extrude_silhouette_height_dimension() -> None:
         assert result.shape[1] == height, f"Y={result.shape[1]} != {height}"
 
 
-def test_extrude_silhouette_uniform_layers() -> None:
-    """All Y layers share an identical XZ cross-section (pure vertical extrusion)."""
+def test_extrude_silhouette_dome_layers() -> None:
+    """Radial height map: center columns reach max height, floor_layers=2 minimum."""
     from PIL import Image
 
-    rgba = Image.new("RGBA", (20, 20), color=(0, 0, 0, 0))
-    for x in range(10):
-        for y in range(20):
-            rgba.putpixel((x, y), (255, 0, 0, 255))
-
-    result = ip._extrude_silhouette(rgba, height_studs=4)
-    for y in range(1, 4):
-        assert np.array_equal(result[:, y, :], result[:, 0, :])
+    rgba = Image.new("RGBA", (20, 20), color=(255, 0, 0, 255))
+    height_studs = 8
+    result = ip._extrude_silhouette(rgba, height_studs=height_studs)
+    # Bottom two layers (floor_layers=2) must be fully filled for all active XZ cells.
+    assert result[:, 0, :].any(), "Y=0 must have some voxels"
+    assert result[:, 1, :].any(), "Y=1 must have some voxels (floor_layers=2)"
+    # Top layer should be reached by center column (dome peak = height_studs).
+    assert result[:, height_studs - 1, :].any(), "center peak must reach max height"
+    # Not all layers are identical (dome varies by radius).
+    assert not np.array_equal(result[:, 0, :], result[:, height_studs - 1, :])
 
 
 def test_extrude_silhouette_rgb_input_treated_as_opaque() -> None:
-    """RGB input (no alpha) is treated as fully opaque — all voxels filled."""
+    """RGB input (no alpha) is treated as fully opaque — base layers filled."""
     from PIL import Image
 
     rgb = Image.new("RGB", (10, 10), color=(255, 0, 0))
     result = ip._extrude_silhouette(rgb, height_studs=4)
-    assert result.all(), "All voxels should be filled for a fully opaque input"
+    # floor_layers=2, so Y=0 and Y=1 must be fully filled for all active XZ positions.
+    assert result[:, 0, :].all(), "Y=0 must be fully filled for opaque input"
+    assert result[:, 1, :].all(), "Y=1 must be fully filled (floor_layers=2)"
 
 
 def test_extrude_silhouette_sparse_falls_back_to_solid() -> None:

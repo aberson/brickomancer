@@ -39,7 +39,7 @@ line-length = 100
 select = ["E", "F", "I"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/harness/run_harness.py" = ["E501"]
+"tests/harness/*.py" = ["E501"]
 
 [dependency-groups]
 dev = [

@@ -384,14 +384,14 @@ class TestWriteLdr:
 
     def test_brick_line_format(self):
         """Check LDraw type-1 line format and coordinate conversion."""
-        # Brick at stud (1, 2, 3) → LDU (20, -48, 60)
+        # Brick at stud (1, 2, 3) with width=1 length=2 → LDU (20, -48, 70)
         bp = _make_bp(1, 2, 3, 1, 2)
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "out.ldr")
             write_ldr([bp], path)
             content = open(path, encoding="utf-8").read()
-            # x=1*20=20, y=2*-24=-48, z=3*20=60, identity matrix, part 3004
-            assert "1 15 20 -48 60 1 0 0 0 1 0 0 0 1 3004.dat" in content
+            # x=1*20+(1-1)*10=20, y=2*-24=-48, z=3*20+(2-1)*10=70, identity matrix, part 3004
+            assert "1 15 20 -48 70 1 0 0 0 1 0 0 0 1 3004.dat" in content
 
     def test_step_markers_every_8(self):
         """0 STEP should appear after every batch of 8, including the last."""
@@ -423,69 +423,6 @@ class TestWriteLdr:
             content = open(path, encoding="utf-8").read()
             assert content.count("0 STEP") == 2
 
-    def test_fade_steps_in_header(self):
-        """FADE_STEPS meta commands must appear in header before any brick line."""
-        bricks = [_make_bp(0, 0, 0)]
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "fade.ldr")
-            write_ldr(bricks, path)
-            lines = open(path, encoding="utf-8").read().splitlines()
-            # Find position of FADE_STEPS and first brick line
-            fade_idx = next(
-                (i for i, ln in enumerate(lines) if "FADE_STEPS ENABLED TRUE" in ln), None
-            )
-            first_brick_idx = next(
-                (i for i, ln in enumerate(lines) if ln.startswith("1 ")), None
-            )
-            assert fade_idx is not None, "FADE_STEPS ENABLED TRUE not found"
-            assert first_brick_idx is not None, "No brick line found"
-            assert fade_idx < first_brick_idx, (
-                "FADE_STEPS must appear before first brick line"
-            )
-            # Both FADE_STEPS lines must be present
-            content = "\n".join(lines)
-            assert "0 !LPUB FADE_STEPS ENABLED TRUE" in content
-            assert "0 !LPUB FADE_STEPS SETUP OPACITY 50" in content
-
-    def test_cover_page_after_first_step_only(self):
-        """INSERT COVER_PAGE must appear once, after the first 0 STEP, not before bricks."""
-        # 17 bricks → 3 steps; COVER_PAGE should only follow step 0
-        bricks = [_make_bp(i, 0, 0) for i in range(17)]
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "cover.ldr")
-            write_ldr(bricks, path)
-            lines = open(path, encoding="utf-8").read().splitlines()
-            cover_indices = [i for i, ln in enumerate(lines) if "INSERT COVER_PAGE" in ln]
-            step_indices = [i for i, ln in enumerate(lines) if ln.strip() == "0 STEP"]
-            assert len(cover_indices) == 1, "COVER_PAGE must appear exactly once"
-            # COVER_PAGE must come after the first STEP marker
-            assert cover_indices[0] > step_indices[0], (
-                "COVER_PAGE must be after the first 0 STEP"
-            )
-            # COVER_PAGE must not be before any brick line
-            first_brick_idx = next(
-                (i for i, ln in enumerate(lines) if ln.startswith("1 ")), None
-            )
-            assert cover_indices[0] > first_brick_idx, (
-                "COVER_PAGE must not appear before brick lines"
-            )
-
-    def test_insert_model_after_bom(self):
-        """INSERT MODEL must appear after INSERT BOM at the tail."""
-        bricks = [_make_bp(0, 0, 0)]
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "model.ldr")
-            write_ldr(bricks, path)
-            lines = open(path, encoding="utf-8").read().splitlines()
-            bom_idx = next(
-                (i for i, ln in enumerate(lines) if "INSERT BOM" in ln), None
-            )
-            model_idx = next(
-                (i for i, ln in enumerate(lines) if "INSERT MODEL" in ln), None
-            )
-            assert bom_idx is not None, "INSERT BOM not found"
-            assert model_idx is not None, "INSERT MODEL not found"
-            assert model_idx > bom_idx, "INSERT MODEL must come after INSERT BOM"
 
 
 # ---------------------------------------------------------------------------

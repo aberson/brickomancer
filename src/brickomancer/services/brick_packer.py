@@ -144,11 +144,11 @@ def _remove_isolated_pillars(placements: list[BrickPlacement]) -> list[BrickPlac
         column_stacks[key].append(bp.y)
 
     bricks_to_remove: set[tuple[int, int, int, int, int]] = set()
-    for (x, z, w, l), layers in column_stacks.items():
+    for (x, z, w, ln), layers in column_stacks.items():
         if len(layers) < 2:
             continue
 
-        footprint_studs = {(x + dx, z + dz) for dx in range(w) for dz in range(l)}
+        footprint_studs = {(x + dx, z + dz) for dx in range(w) for dz in range(ln)}
         adjacent_studs: set[tuple[int, int]] = set()
         for sx, sz in footprint_studs:
             for nx, nz in [(sx - 1, sz), (sx + 1, sz), (sx, sz - 1), (sx, sz + 1)]:
@@ -165,7 +165,7 @@ def _remove_isolated_pillars(placements: list[BrickPlacement]) -> list[BrickPlac
             continue
 
         is_extremity = (
-            w == 1 and l == 1
+            w == 1 and ln == 1
             and max_radial > 0
             and ((x - cx) ** 2 + (z - cz) ** 2) ** 0.5 > extremity_threshold
         )
@@ -173,10 +173,10 @@ def _remove_isolated_pillars(placements: list[BrickPlacement]) -> list[BrickPlac
         if is_extremity:
             for y in layers:
                 if y != min_y:
-                    bricks_to_remove.add((x, z, w, l, y))
+                    bricks_to_remove.add((x, z, w, ln, y))
         else:
             for y in isolated_layers:
-                bricks_to_remove.add((x, z, w, l, y))
+                bricks_to_remove.add((x, z, w, ln, y))
 
     pass1: list[BrickPlacement] = [
         bp for bp in placements
@@ -196,7 +196,8 @@ def _remove_isolated_pillars(placements: list[BrickPlacement]) -> list[BrickPlac
     for sx, sz in global_xz:
         if len(xz_layer_count[(sx, sz)]) < 2:
             continue
-        if not any((sx + dx, sz + dz) in global_xz for dx, dz in [(-1, 0), (1, 0), (0, -1), (0, 1)]):
+        neighbors = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        if not any((sx + dx, sz + dz) in global_xz for dx, dz in neighbors):
             isolated_xz.add((sx, sz))
 
     if not isolated_xz:

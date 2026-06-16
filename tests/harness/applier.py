@@ -5,12 +5,11 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import subprocess
 from pathlib import Path
 from typing import Any
 
-from tests.harness.judge import LPUB3D_META_REFERENCE, _LPUB_DIMENSIONS
+from tests.harness.judge import _LPUB_DIMENSIONS, LPUB3D_META_REFERENCE
 
 log = logging.getLogger("harness")
 
@@ -216,7 +215,6 @@ def apply(
             log.warning("apply: git add failed: %s", git_add.stderr[:200])
             return {"dimension": dimension, "change_summary": summary, "test_result": "PASS_ADD_FAILED"}
 
-        normalized_score = 0.0  # judge doesn't surface this; commit msg omits it
         commit_msg = f"harness iter {iteration}: improve {dimension} via judge"
         git_commit = subprocess.run(
             ["git", "commit", "-m", commit_msg],
