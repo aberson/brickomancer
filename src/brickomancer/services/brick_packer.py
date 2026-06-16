@@ -14,6 +14,8 @@ connectivity_repair(placements) -> list[BrickPlacement]
     1×1 bricks to restore structural continuity.
 """
 
+import math
+
 import numpy as np
 
 from brickomancer.models.brick import BRICK_PART_IDS, BRICK_TYPES, TILE_PART_IDS, BrickPlacement
@@ -265,6 +267,57 @@ def _brace_thin_columns(placements: list[BrickPlacement], color_id: int) -> list
                 break
 
     return placements + support_bricks
+
+
+def _fill_central_hub(
+    placements: list[BrickPlacement], grid: np.ndarray, color_id: int
+) -> list[BrickPlacement]:
+    X, Y, Z = grid.shape
+
+    occupied = np.argwhere(grid)
+    if occupied.size == 0:
+        return placements
+
+    cx = float(np.mean(occupied[:, 0]))
+    cz = float(np.mean(occupied[:, 2]))
+
+    hub_radius = math.ceil(min(X, Z) * 0.30)
+
+    layers_with_placements: set[int] = {bp.y for bp in placements}
+
+    covered: set[tuple[int, int, int]] = set()
+    for bp in placements:
+        for sx, sz in _footprint(bp):
+            covered.add((sx, bp.y, sz))
+
+    new_bricks: list[BrickPlacement] = []
+    new_positions: set[tuple[int, int, int]] = set()
+
+    for y in layers_with_placements:
+        for x in range(X):
+            for z in range(Z):
+                dist = ((x - cx) ** 2 + (z - cz) ** 2) ** 0.5
+                if dist > hub_radius:
+                    continue
+                if not grid[x, y, z]:
+                    continue
+                pos = (x, y, z)
+                if pos in covered or pos in new_positions:
+                    continue
+                new_positions.add(pos)
+                new_bricks.append(
+                    BrickPlacement(
+                        part_id=BRICK_PART_IDS[(1, 1)],
+                        color_id=color_id,
+                        x=x,
+                        y=y,
+                        z=z,
+                        width=1,
+                        length=1,
+                    )
+                )
+
+    return placements + new_bricks
 
 
 def _add_floor_support(placements: list[BrickPlacement], color_id: int) -> list[BrickPlacement]:
@@ -553,6 +606,7 @@ def pack(
 
     # Remove isolated pillar columns, then repair connectivity, then add floor support, then tile the top surface
     placements = _remove_isolated_pillars(placements)
+    placements = _fill_central_hub(placements, grid, color_id)
     placements = connectivity_repair(placements)
     placements = _add_floor_support(placements, color_id)
     placements = _brace_thin_columns(placements, color_id)
