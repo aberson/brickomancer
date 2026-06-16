@@ -1,4 +1,4 @@
-"""LDraw writer — converts BrickPlacements to .ldr file format.
+"""LDraw writer â€” converts BrickPlacements to .ldr file format.
 
 Public API
 ----------
@@ -113,7 +113,8 @@ def write_ldr(
     are skipped entirely to prevent LPub3D from rendering a blank page 1.
 
     LPub3D meta commands emitted:
-    - File header: HIGHLIGHT_STEP ENABLED and SETUP COLOR lines.
+    - File header: HIGHLIGHT_STEP ENABLED and SETUP COLOR lines, then
+      FADE_STEPS ENABLED and SETUP OPACITY lines.
     - After header meta commands: ``0 STEP`` then ``0 !LPUB INSERT COVER_PAGE``.
     - Immediately after final ``0 STEP``: ``0 !LPUB INSERT BOM``.
 
@@ -136,6 +137,8 @@ def write_ldr(
         "",
         "0 !LPUB HIGHLIGHT_STEP ENABLED TRUE",
         "0 !LPUB HIGHLIGHT_STEP SETUP COLOR FF0000",
+        "0 !LPUB FADE_STEPS ENABLED TRUE",
+        "0 !LPUB FADE_STEPS SETUP OPACITY 50",
         "0 STEP",
         "0 !LPUB INSERT COVER_PAGE",
     ]
