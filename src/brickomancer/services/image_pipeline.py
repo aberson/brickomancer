@@ -1,4 +1,4 @@
-﻿"""Image pipeline — rembg background removal, TripoSR mesh generation, voxelization.
+"""Image pipeline — rembg background removal, TripoSR mesh generation, voxelization.
 
 TripoSR and torch are NOT listed in pyproject.toml (CUDA-specific install required
 separately).  rembg requires onnxruntime (CPU or GPU variant).  Both imports are
@@ -211,9 +211,24 @@ def _extrude_silhouette(rgba_image: Image.Image, height_studs: int) -> np.ndarra
                 x1 = max(x0 + 1, int((ox + 1) * hires_x / out_x))
                 mask_zx[oz, ox] = mask_hires[z0:z1, x0:x1].any()
 
+    floor_layers = 2
+    max_layers = height_studs
+
+    active_coords = np.argwhere(mask_zx)  # shape (N, 2): (z_idx, x_idx)
     voxels = np.zeros((out_x, height_studs, out_z), dtype=bool)
-    for y in range(height_studs):
-        voxels[:, y, :] = mask_zx.T  # (out_z, out_x).T → (out_x, out_z)
+    if active_coords.shape[0] > 0:
+        center = np.mean(active_coords, axis=0)
+        distances = np.linalg.norm(active_coords - center, axis=1)
+        max_dist = distances.max()
+        if max_dist == 0:
+            max_dist = 1.0
+        norm_distances = distances / max_dist
+        cell_heights = np.round(
+            floor_layers + (max_layers - floor_layers) * (1.0 - norm_distances)
+        ).astype(int)
+        for i, (oz, ox) in enumerate(active_coords):
+            col_height = int(cell_heights[i])
+            voxels[ox, :col_height, oz] = True
     return voxels
 
 
