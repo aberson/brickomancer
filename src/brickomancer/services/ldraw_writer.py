@@ -26,14 +26,9 @@ Line format:
 
 Step markers:
   ``0 STEP`` is inserted after every step including the last, so LPub3D
-  renders each step as a separate page.  ``0 !LPUB INSERT COVER_PAGE`` is
-  emitted after the first ``0 STEP`` (page boundary required; must not be in
-  the header before any bricks).  ``0 !LPUB INSERT BOM`` is placed after the
-  final ``0 STEP`` so LPub3D renders a consolidated parts-inventory page.
-  ``0 !LPUB INSERT MODEL`` follows immediately after, rendering the completed
-  model on the last page.  ``0 !LPUB FADE_STEPS ENABLED TRUE`` and
-  ``0 !LPUB FADE_STEPS SETUP OPACITY 50`` are emitted in the header (before
-  the first brick line) as global LPub3D configuration.
+  renders each step as a separate page.  ``0 !LPUB INSERT BOM`` is placed
+  after the final ``0 STEP`` so LPub3D renders a consolidated parts-inventory
+  page.
 """
 
 import os
@@ -117,11 +112,7 @@ def write_ldr(
     so LPub3D renders each step as a separate page.
 
     LPub3D meta commands emitted:
-    - Header: ``0 !LPUB FADE_STEPS ENABLED TRUE`` and
-      ``0 !LPUB FADE_STEPS SETUP OPACITY 50`` (global config, before bricks).
-    - After first ``0 STEP`` only: ``0 !LPUB INSERT COVER_PAGE``.
-    - After final ``0 STEP``: ``0 !LPUB INSERT BOM`` then
-      ``0 !LPUB INSERT MODEL``.
+    - After final ``0 STEP``: ``0 !LPUB INSERT BOM``.
 
     Args:
         placements: list[BrickPlacement] to write.
