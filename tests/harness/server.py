@@ -24,7 +24,7 @@ def start_server(server_port: int, log_path: Path) -> subprocess.Popen[bytes]:
         stdout=log_fh,
         stderr=log_fh,
     )
-    log.info("Server process started (pid=%d); log → %s", proc.pid, log_path)
+    log.info("Server process started (pid=%d); log -> %s", proc.pid, log_path)
     return proc
 
 
