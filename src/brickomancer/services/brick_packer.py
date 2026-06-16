@@ -113,47 +113,51 @@ def _apply_surface_tiles(placements: list[BrickPlacement]) -> list[BrickPlacemen
 
 
 def _remove_isolated_pillars(placements: list[BrickPlacement]) -> list[BrickPlacement]:
-    occupied_by_layer: dict[int, set[tuple[int, int]]] = {}
+    stud_positions_by_layer: dict[int, set[tuple[int, int]]] = {}
     for bp in placements:
-        if bp.y not in occupied_by_layer:
-            occupied_by_layer[bp.y] = set()
+        if bp.y not in stud_positions_by_layer:
+            stud_positions_by_layer[bp.y] = set()
         for sx, sz in _footprint(bp):
-            occupied_by_layer[bp.y].add((sx, sz))
+            stud_positions_by_layer[bp.y].add((sx, sz))
 
-    pillar_layers: dict[tuple[int, int], list[int]] = {}
+    column_stacks: dict[tuple[int, int, int, int], list[int]] = {}
     for bp in placements:
-        if bp.width == 1 and bp.length == 1:
-            key = (bp.x, bp.z)
-            if key not in pillar_layers:
-                pillar_layers[key] = []
-            pillar_layers[key].append(bp.y)
+        key = (bp.x, bp.z, bp.width, bp.length)
+        if key not in column_stacks:
+            column_stacks[key] = []
+        column_stacks[key].append(bp.y)
 
-    isolated: set[tuple[int, int]] = set()
-    for (x, z), layers in pillar_layers.items():
+    isolated_keys: set[tuple[int, int, int, int]] = set()
+    for (x, z, w, l), layers in column_stacks.items():
         if len(layers) < 2:
             continue
-        neighbors = [(x - 1, z), (x + 1, z), (x, z - 1), (x, z + 1)]
+
+        footprint_studs = {(x + dx, z + dz) for dx in range(w) for dz in range(l)}
+        adjacent_studs: set[tuple[int, int]] = set()
+        for sx, sz in footprint_studs:
+            for nx, nz in [(sx - 1, sz), (sx + 1, sz), (sx, sz - 1), (sx, sz + 1)]:
+                if (nx, nz) not in footprint_studs:
+                    adjacent_studs.add((nx, nz))
+
         has_neighbor = any(
-            (nx, nz) in occupied_by_layer.get(y, set())
+            bool(adjacent_studs & stud_positions_by_layer.get(y, set()))
             for y in layers
-            for nx, nz in neighbors
         )
         if not has_neighbor:
-            isolated.add((x, z))
+            isolated_keys.add((x, z, w, l))
 
-    if not isolated:
+    if not isolated_keys:
         return placements
 
-    lowest_y: dict[tuple[int, int], int] = {
-        (x, z): min(pillar_layers[(x, z)]) for (x, z) in isolated
+    lowest_y: dict[tuple[int, int, int, int], int] = {
+        key: min(column_stacks[key]) for key in isolated_keys
     }
 
     result: list[BrickPlacement] = []
     for bp in placements:
-        if bp.width == 1 and bp.length == 1:
-            key = (bp.x, bp.z)
-            if key in isolated and bp.y != lowest_y[key]:
-                continue
+        key = (bp.x, bp.z, bp.width, bp.length)
+        if key in isolated_keys and bp.y != lowest_y[key]:
+            continue
         result.append(bp)
     return result
 
@@ -412,7 +416,7 @@ def pack(
                     placements.append(candidate_1x1)
                     covered[x, z] = True
 
-    # Remove isolated 1x1 pillar columns, then repair connectivity, then tile the top surface
+    # Remove isolated pillar columns, then repair connectivity, then tile the top surface
     placements = _remove_isolated_pillars(placements)
     placements = connectivity_repair(placements)
     return _apply_surface_tiles(placements)
