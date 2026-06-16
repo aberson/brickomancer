@@ -44,6 +44,24 @@ def _collect_footprints(placements: list[BrickPlacement], layer: int) -> set[tup
     return result
 
 
+def _boundary_voxels(layer_slice: np.ndarray) -> set[tuple[int, int]]:
+    """Return (x, z) positions with fewer than 3 occupied XZ-plane neighbors."""
+    X, Z = layer_slice.shape
+    boundary: set[tuple[int, int]] = set()
+    for x in range(X):
+        for z in range(Z):
+            if not layer_slice[x, z]:
+                continue
+            neighbors = 0
+            for dx, dz in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, nz = x + dx, z + dz
+                if 0 <= nx < X and 0 <= nz < Z and layer_slice[nx, nz]:
+                    neighbors += 1
+            if neighbors < 3:
+                boundary.add((x, z))
+    return boundary
+
+
 def _apply_surface_tiles(placements: list[BrickPlacement]) -> list[BrickPlacement]:
     """Replace top-surface bricks with tile variants for a smooth finished face.
 
@@ -513,6 +531,10 @@ def pack(
         # Footprint of all bricks already placed in layer y-1
         below_fps: set[tuple[int, int]] = _collect_footprints(placements, y - 1) if y > 0 else set()
 
+        # Boundary voxels for this layer: positions with < 3 occupied XZ neighbors.
+        # These receive only 1×1 bricks to preserve arm-tip and edge geometry.
+        boundary = _boundary_voxels(grid[:, y, :])
+
         # Per-Z-row starter pre-pass for odd layers only.
         # For each Z row, find the leftmost occupied, unplaced stud and place a
         # 1×1 there. This shifts the greedy scan's effective start to x=1 in
@@ -544,7 +566,8 @@ def pack(
                     continue
 
                 placed = False
-                for w, ln in brick_set:
+                effective_brick_set = [(1, 1)] if (x, z) in boundary else brick_set
+                for w, ln in effective_brick_set:
                     orientations: list[tuple[int, int]] = [(w, ln)]
                     if w != ln and (ln, w) in BRICK_PART_IDS:
                         orientations.append((ln, w))
