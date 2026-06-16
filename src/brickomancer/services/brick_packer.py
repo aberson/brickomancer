@@ -1,4 +1,4 @@
-"""Brick packer — greedy layer-by-layer LEGO brick placement algorithm.
+"""Brick packer â€” greedy layer-by-layer LEGO brick placement algorithm.
 
 Public API
 ----------
@@ -11,7 +11,7 @@ interlocking_check(placements, layer) -> list[BrickPlacement]
 
 connectivity_repair(placements) -> list[BrickPlacement]
     Find bricks at y>0 with no stud connection to layer y-1 and force-insert
-    1×1 bricks to restore structural continuity.
+    1Ã—1 bricks to restore structural continuity.
 """
 
 import numpy as np
@@ -29,7 +29,7 @@ def _footprint(bp: BrickPlacement) -> set[tuple[int, int]]:
 
 
 def _has_connection(bp: BrickPlacement, below_footprints: set[tuple[int, int]]) -> bool:
-    """Return True if bp shares ≥1 stud with any brick in the layer below."""
+    """Return True if bp shares â‰¥1 stud with any brick in the layer below."""
     return bool(_footprint(bp) & below_footprints)
 
 
@@ -206,6 +206,36 @@ def _remove_isolated_pillars(placements: list[BrickPlacement]) -> list[BrickPlac
     return [bp for bp in pass1 if bp.y == 0 or not (_footprint(bp) <= isolated_xz)]
 
 
+def _add_floor_support(placements: list[BrickPlacement], color_id: int) -> list[BrickPlacement]:
+    above_ground_xz: set[tuple[int, int]] = set()
+    for bp in placements:
+        if bp.y >= 1:
+            above_ground_xz |= _footprint(bp)
+
+    floor_xz: set[tuple[int, int]] = set()
+    for bp in placements:
+        if bp.y == 0:
+            floor_xz |= _footprint(bp)
+
+    missing = above_ground_xz - floor_xz
+    if not missing:
+        return placements
+
+    support_bricks = [
+        BrickPlacement(
+            part_id=BRICK_PART_IDS[(1, 1)],
+            color_id=color_id,
+            x=x,
+            y=0,
+            z=z,
+            width=1,
+            length=1,
+        )
+        for x, z in missing
+    ]
+    return placements + support_bricks
+
+
 # ---------------------------------------------------------------------------
 # Public helpers (also used by tests)
 # ---------------------------------------------------------------------------
@@ -215,7 +245,7 @@ def interlocking_check(placements: list[BrickPlacement], layer: int) -> list[Bri
     """Check and repair interlocking for bricks at a given layer.
 
     For each brick in *layer* that has no connection to *layer - 1*, remove it
-    and try to replace it with 1×1 bricks that DO connect.  The primary packing
+    and try to replace it with 1Ã—1 bricks that DO connect.  The primary packing
     loop already enforces connectivity, so this function is a safety net for
     edge cases.
 
@@ -241,7 +271,7 @@ def interlocking_check(placements: list[BrickPlacement], layer: int) -> list[Bri
         if _has_connection(bp, below_footprints):
             result.append(bp)
         else:
-            # Replace disconnected brick with connected 1×1 bricks
+            # Replace disconnected brick with connected 1Ã—1 bricks
             for sx, sz in _footprint(bp):
                 if (sx, sz) in below_footprints:
                     result.append(
@@ -259,10 +289,10 @@ def interlocking_check(placements: list[BrickPlacement], layer: int) -> list[Bri
 
 
 def connectivity_repair(placements: list[BrickPlacement]) -> list[BrickPlacement]:
-    """Find and repair floating bricks by inserting 1×1 bridge pillars.
+    """Find and repair floating bricks by inserting 1Ã—1 bridge pillars.
 
     Bricks at y>0 that share no stud with any brick in layer y-1 are
-    force-connected by inserting a 1×1 at the nearest stud in the layer below.
+    force-connected by inserting a 1Ã—1 at the nearest stud in the layer below.
 
     Args:
         placements: List of BrickPlacement objects.
@@ -327,11 +357,11 @@ def pack(
 
     Greedy layer-by-layer placement with:
     - Per-Z-row starter pre-pass masonry: on odd layers (y % 2 == 1), place a
-      1×1 brick at the leftmost occupied stud in each Z row before the main
+      1Ã—1 brick at the leftmost occupied stud in each Z row before the main
       greedy scan. This forces the main scan to start from leftmost+1, shifting
       all seam positions relative to even layers and producing true interlocking.
       Even layers (y % 2 == 0) use a standard scan from x=0 with no pre-pass.
-    - Connectivity enforcement: each brick at y>0 must share ≥1 stud with the
+    - Connectivity enforcement: each brick at y>0 must share â‰¥1 stud with the
       layer below; if no brick type achieves this, fall through and rely on
       connectivity_repair.
     - Connectivity repair pass after all layers are placed.
@@ -371,13 +401,13 @@ def pack(
 
         # Per-Z-row starter pre-pass for odd layers only.
         # For each Z row, find the leftmost occupied, unplaced stud and place a
-        # 1×1 there. This shifts the greedy scan's effective start to x=1 in
+        # 1Ã—1 there. This shifts the greedy scan's effective start to x=1 in
         # every row, producing seam positions that differ from even layers.
         if y % 2 == 1:
             for z in range(Z):
                 for x in range(X):
                     if grid[x, y, z] and not covered[x, z]:
-                        # Connectivity check before placing pre-pass 1×1
+                        # Connectivity check before placing pre-pass 1Ã—1
                         candidate = BrickPlacement(
                             part_id=BRICK_PART_IDS[(1, 1)],
                             color_id=color_id,
@@ -446,7 +476,7 @@ def pack(
                         break  # break brick_set loop
 
                 if not placed:
-                    # Fall through: single 1×1 without connectivity guarantee
+                    # Fall through: single 1Ã—1 without connectivity guarantee
                     # (connectivity_repair will fix these)
                     candidate_1x1 = BrickPlacement(
                         part_id=BRICK_PART_IDS[(1, 1)],
@@ -460,7 +490,8 @@ def pack(
                     placements.append(candidate_1x1)
                     covered[x, z] = True
 
-    # Remove isolated pillar columns, then repair connectivity, then tile the top surface
+    # Remove isolated pillar columns, then repair connectivity, then add floor support, then tile the top surface
     placements = _remove_isolated_pillars(placements)
     placements = connectivity_repair(placements)
+    placements = _add_floor_support(placements, color_id)
     return _apply_surface_tiles(placements)
