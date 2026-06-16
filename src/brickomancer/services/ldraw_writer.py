@@ -43,6 +43,8 @@ _TILE_HEIGHT_LDU = 8  # tiles are 8 LDU tall (same as a plate)
 
 _TILE_PART_ID_SET: frozenset[str] = frozenset(TILE_PART_IDS.values())
 
+MAX_BRICKS_PER_STEP: int = 8
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -107,7 +109,8 @@ def write_ldr(
     """Write a list of BrickPlacements to an LDraw .ldr file.
 
     Bricks are grouped by Y-layer (ascending voxel layer) so each layer
-    is a distinct build step.  Large layers are split into sub-steps of 8.
+    is a distinct build step.  Large layers are split into sub-steps of
+    MAX_BRICKS_PER_STEP bricks each.
     A ``0 STEP`` marker is inserted after every non-empty step, including
     the last, so LPub3D renders each step as a separate page.  Empty steps
     are skipped entirely to prevent LPub3D from rendering a blank page 1.
@@ -127,7 +130,7 @@ def write_ldr(
         The absolute path to the written .ldr file.
     """
     filename = os.path.basename(output_path)
-    steps = sequence_steps(placements)
+    steps = sequence_steps(placements, MAX_BRICKS_PER_STEP)
 
     lines: list[str] = [
         "0 Brickomancer Build",
