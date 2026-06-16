@@ -113,6 +113,8 @@ def write_ldr(
     are skipped entirely to prevent LPub3D from rendering a blank page 1.
 
     LPub3D meta commands emitted:
+    - File header: HIGHLIGHT_STEP ENABLED and SETUP COLOR lines.
+    - After header meta commands: ``0 STEP`` then ``0 !LPUB INSERT COVER_PAGE``.
     - Immediately after final ``0 STEP``: ``0 !LPUB INSERT BOM``.
 
     Args:
@@ -134,7 +136,8 @@ def write_ldr(
         "",
         "0 !LPUB HIGHLIGHT_STEP ENABLED TRUE",
         "0 !LPUB HIGHLIGHT_STEP SETUP COLOR FF0000",
-        "0 STEP",  # cover page step
+        "0 STEP",
+        "0 !LPUB INSERT COVER_PAGE",
     ]
 
     for step_bricks in steps:
