@@ -62,6 +62,19 @@ def _append_scores(entry: dict) -> None:
         fh.write(json.dumps(entry) + "\n")
 
 
+def _patch_advisor_report(runs_dir: Path, file_prefix: str, extra: dict) -> None:
+    """Merge extra keys into the existing advisor report JSON in-place."""
+    report_path = runs_dir / f"{file_prefix}_advisor_reports.json"
+    if not report_path.exists():
+        return
+    try:
+        data = json.loads(report_path.read_text(encoding="utf-8"))
+        data.update(extra)
+        report_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception as exc:
+        log.warning("_patch_advisor_report: could not update %s: %s", report_path.name, exc)
+
+
 def _dry_run_scores_entry(iteration: int) -> dict:
     return {
         "iteration": iteration,
@@ -175,8 +188,17 @@ def main() -> None:
                 iterations_completed += 1
                 continue
 
+            _patch_advisor_report(RUNS_DIR, file_prefix, {"judge_decision": judge_decision})
+
             # e) Applier
             apply_result = apply(judge_decision, i, PROJECT_ROOT)
+            _patch_advisor_report(RUNS_DIR, file_prefix, {
+                "apply_result": {
+                    "test_result": apply_result.get("test_result"),
+                    "change_summary": apply_result.get("change_summary"),
+                    "dimension": apply_result.get("dimension"),
+                }
+            })
             _append_scores(_scores_entry(
                 i, advisor_results, apply_result, judge_decision,
                 input_image_path.name, _HEIGHT_STUDS,
