@@ -1,4 +1,4 @@
-"""LDraw writer — converts BrickPlacements to .ldr file format.
+"""LDraw writer â€” converts BrickPlacements to .ldr file format.
 
 Public API
 ----------
@@ -112,7 +112,6 @@ def write_ldr(
     so LPub3D renders each step as a separate page.
 
     LPub3D meta commands emitted:
-    - Header: ``0 !LPUB FADE_STEPS ENABLED TRUE`` and ``0 !LPUB FADE_STEPS SETUP OPACITY 50``.
     - Immediately after final ``0 STEP``: ``0 !LPUB INSERT BOM``.
 
     Args:
@@ -131,8 +130,6 @@ def write_ldr(
         f"0 Name: {filename}",
         "0 Author: Brickomancer",
         f"0 Tier: {tier_name}",
-        "0 !LPUB FADE_STEPS ENABLED TRUE",
-        "0 !LPUB FADE_STEPS SETUP OPACITY 50",
         "",
     ]
 
