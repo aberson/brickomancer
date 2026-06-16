@@ -604,7 +604,7 @@ def pack(
                     placements.append(candidate_1x1)
                     covered[x, z] = True
 
-    # Remove isolated pillar columns, then repair connectivity, then add floor support, then tile the top surface
+    # Remove isolated pillars, repair connectivity, add floor support, tile top surface
     placements = _remove_isolated_pillars(placements)
     placements = _fill_central_hub(placements, grid, color_id)
     placements = connectivity_repair(placements)
