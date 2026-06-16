@@ -1,4 +1,4 @@
-"""LDraw writer — converts BrickPlacements to .ldr file format.
+"""LDraw writer â€” converts BrickPlacements to .ldr file format.
 
 Public API
 ----------
@@ -132,6 +132,8 @@ def write_ldr(
         "0 Author: Brickomancer",
         f"0 Tier: {tier_name}",
         "",
+        "0 !LPUB HIGHLIGHT_STEP ENABLED TRUE",
+        "0 !LPUB HIGHLIGHT_STEP SETUP COLOR 0000FF",
         "0 STEP",  # cover page step
     ]
 
