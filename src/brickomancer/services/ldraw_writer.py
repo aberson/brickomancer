@@ -25,10 +25,10 @@ Line format:
   1 <color_id> <x> <y> <z> 1 0 0 0 1 0 0 0 1 <part_file>.dat
 
 Step markers:
-  ``0 STEP`` is inserted after every step including the last, so LPub3D
-  renders each step as a separate page.  ``0 !LPUB INSERT BOM`` is placed
-  immediately after the final ``0 STEP`` so LPub3D renders a consolidated
-  parts-inventory page.
+  ``0 STEP`` is inserted after every non-empty step including the last, so
+  LPub3D renders each step as a separate page.  ``0 !LPUB INSERT BOM`` is
+  placed immediately after the final ``0 STEP`` so LPub3D renders a
+  consolidated parts-inventory page.
 """
 
 import os
@@ -108,8 +108,9 @@ def write_ldr(
 
     Bricks are grouped by Y-layer (ascending voxel layer) so each layer
     is a distinct build step.  Large layers are split into sub-steps of 8.
-    A ``0 STEP`` marker is inserted after every step, including the last,
-    so LPub3D renders each step as a separate page.
+    A ``0 STEP`` marker is inserted after every non-empty step, including
+    the last, so LPub3D renders each step as a separate page.  Empty steps
+    are skipped entirely to prevent LPub3D from rendering a blank page 1.
 
     LPub3D meta commands emitted:
     - Immediately after final ``0 STEP``: ``0 !LPUB INSERT BOM``.
@@ -134,6 +135,8 @@ def write_ldr(
     ]
 
     for step_bricks in steps:
+        if not step_bricks:
+            continue
         for bp in step_bricks:
             lines.append(_brick_line(bp))
         lines.append("0 STEP")
