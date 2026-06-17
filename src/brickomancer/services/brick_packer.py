@@ -18,7 +18,13 @@ import math
 
 import numpy as np
 
-from brickomancer.models.brick import BRICK_PART_IDS, BRICK_TYPES, TILE_PART_IDS, BrickPlacement
+from brickomancer.models.brick import (
+    BRICK_PART_IDS,
+    BRICK_TYPES,
+    MIN_GRID_DIM,
+    TILE_PART_IDS,
+    BrickPlacement,
+)
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -492,10 +498,11 @@ def pack(
 
     X, Y, Z = grid.shape
 
-    _MIN_FOOTPRINT = 2
-    if X < _MIN_FOOTPRINT or Z < _MIN_FOOTPRINT:
-        px = max(0, _MIN_FOOTPRINT - X)
-        pz = max(0, _MIN_FOOTPRINT - Z)
+    # MIN_GRID_DIM is the single source of truth for the minimum footprint (X/Z);
+    # the Shaper seam's validate_grid enforces the same floor on its output.
+    if X < MIN_GRID_DIM or Z < MIN_GRID_DIM:
+        px = max(0, MIN_GRID_DIM - X)
+        pz = max(0, MIN_GRID_DIM - Z)
         grid = np.pad(grid, ((0, px), (0, 0), (0, pz)), mode="edge")
         X, Z = grid.shape[0], grid.shape[2]
 

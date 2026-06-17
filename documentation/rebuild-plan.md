@@ -152,6 +152,10 @@ spike shows TripoSG installs cleanly and renders better.
 - **Done when:** the interface is defined, a trivial stub implementation returns a valid grid, and
   a contract test asserts the grid shape/dtype/Y-up convention.
 - **Depends on:** Step 1
+- **Status:** DONE (2026-06-17) — `Shaper` ABC + no-arg `to_voxels()` (constructor-injected
+  input/config, geometry-only seam), `validate_grid` enforcing footprint (X,Z ∈ [2,32]) vs height
+  (Y ∈ [2,64]), asymmetric grounded `StubShaper`, grid-dim constants single-sourced in
+  `models/brick.py` (packer now imports `MIN_GRID_DIM`). 27 contract tests incl. pack-integration.
 
 ---
 

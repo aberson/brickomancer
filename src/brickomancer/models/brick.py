@@ -11,6 +11,16 @@ from dataclasses import dataclass, field
 # Sorted largest-first so the packer tries big bricks before small ones.
 BRICK_TYPES: list[tuple[int, int]] = [(2, 4), (2, 3), (2, 2), (1, 4), (1, 3), (1, 2), (1, 1)]
 
+# Single source of truth for the voxel-grid dimension bounds (the Shaper output
+# contract). Both the Shaper seam (services/shaper.py validate_grid) and the packer
+# (services/brick_packer.py footprint padding) import these — never re-declare.
+# X and Z are the horizontal FOOTPRINT (masonry-constrained, padded to >= MIN_GRID_DIM
+# by the packer); Y is the VERTICAL height in layers, which the packer leaves unbounded,
+# so it gets a separate, generous sanity cap rather than the footprint max.
+MIN_GRID_DIM: int = 2      # min footprint AND min height (a buildable object)
+MAX_GRID_DIM: int = 32     # max X/Z footprint for V1 shapes
+MAX_GRID_HEIGHT: int = 64  # max Y (layers) — sanity cap, not a hard design limit
+
 # Mapping from (width, length) to LDraw part ID
 BRICK_PART_IDS: dict[tuple[int, int], str] = {
     (2, 4): "3001",
