@@ -88,6 +88,7 @@ spike shows TripoSG installs cleanly and renders better.
 - **Done when:** both fixtures parse as valid LDraw (no syntax error when opened by LDView); the
   meta header contains exactly the COVER_PAGE + BOM + step-numbering commands and nothing else.
 - **Depends on:** none
+- **Status:** DONE (2026-06-17)
 
 ### Step 0.2: Toolchain + license confirmation
 - **Problem:** Confirm LDView 4.7 + LPub3D 2.4.9 headless still produce a valid PNG + multi-page
