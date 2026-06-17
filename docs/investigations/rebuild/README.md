@@ -16,6 +16,7 @@ code clarity. The rebuild is **open to rethinking the technical approach**.
 | [01-distillation.md](01-distillation.md) | Inventory of everything worth keeping from v1: contracts, tests, hard-won fixes, reference data, docs. |
 | [02-plateau-postmortem.md](02-plateau-postmortem.md) | Root-cause diagnosis of why the quality harness plateaued. Two ceilings: representation and feedback loop. |
 | [03-better-approaches.md](03-better-approaches.md) | 2026 technical-approach research: image→3D models, voxel→brick packing, instruction toolchain, the harness redesign. |
+| [04-model-spike-result.md](04-model-spike-result.md) | Phase 0 spike result: **Hunyuan3D-2mini chosen** (TripoSG install-blocked on Windows); star voxelizes recognizably (points survive) — kill-criterion risk retired. |
 
 The build-ready plan produced from this investigation lives at
 [`documentation/rebuild-plan.md`](../../../documentation/rebuild-plan.md).

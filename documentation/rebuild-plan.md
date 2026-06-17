@@ -74,6 +74,7 @@ spike shows TripoSG installs cleanly and renders better.
 - **Done when:** one model is chosen with evidence it voxelizes the star recognizably (points
   visible), and the install procedure is reproducible from the notes.
 - **Depends on:** none
+- **Status:** DONE (2026-06-17)
 
 <!-- autofix-applied: 2026-06-16 -->
 ### Step 0.2-prep: Author the frozen LPub3D meta-header fixture
