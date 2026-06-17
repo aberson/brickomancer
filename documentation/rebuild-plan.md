@@ -199,6 +199,12 @@ spike shows TripoSG installs cleanly and renders better.
   1×1 stacks and zero articulation points at arm tips; a regression test asserts no cut vertices;
   **the packed output adds no build-height layers beyond the input grid's top (in-volume bonding —
   no above-grid connectivity caps), while keeping 1 connected component + 0 unsupported.**
+- **Status:** NOT STARTED — build-ready design spec at
+  [`docs/investigations/rebuild/06-step4-design.md`](../docs/investigations/rebuild/06-step4-design.md).
+  Deferred to a fresh session (2026-06-17): zero-height requires a `(2,1)` part + an `ldraw_writer`
+  90° rotation matrix, which is render-sensitive (needs an operator LDView UAT). A z-only in-volume
+  attempt was measured (cube +1, star +3 — x-adjacent bonds dominate) and reverted; do the full
+  `(2,1)`-inclusive plan per the spec.
 - **Depends on:** Step 3
 
 ---

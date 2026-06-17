@@ -17,6 +17,7 @@ code clarity. The rebuild is **open to rethinking the technical approach**.
 | [02-plateau-postmortem.md](02-plateau-postmortem.md) | Root-cause diagnosis of why the quality harness plateaued. Two ceilings: representation and feedback loop. |
 | [03-better-approaches.md](03-better-approaches.md) | 2026 technical-approach research: image→3D models, voxel→brick packing, instruction toolchain, the harness redesign. |
 | [04-model-spike-result.md](04-model-spike-result.md) | Phase 0 spike result: **Hunyuan3D-2mini chosen** (TripoSG install-blocked on Windows); star voxelizes recognizably (points survive) — kill-criterion risk retired. |
+| [06-step4-design.md](06-step4-design.md) | Build-ready spec for Phase 2 Step 4 (in-volume bonding + split/re-merge + physics rollback). Captures the `(2,1)`-part crux + render-UAT requirement; a z-only attempt was reverted (see doc). |
 
 The build-ready plan produced from this investigation lives at
 [`documentation/rebuild-plan.md`](../../../documentation/rebuild-plan.md).
