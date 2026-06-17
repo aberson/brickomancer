@@ -11,6 +11,11 @@ tests/harness/runs/*
 tests/harness/scores.jsonl
 tests/harness/server.log
 
+# LPub3D render cache + PDF output generated next to fixture .ldr files by the
+# toolchain smoke (regenerated on every run; never source).
+tests/fixtures/LPub3D/
+tests/fixtures/*_DPI.pdf
+
 # Rebrickable data (re-downloaded via scripts/download_data.py)
 data/rebrickable/*
 !data/rebrickable/.gitkeep

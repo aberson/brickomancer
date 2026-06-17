@@ -78,17 +78,20 @@ spike shows TripoSG installs cleanly and renders better.
 
 <!-- autofix-applied: 2026-06-16 -->
 ### Step 0.2-prep: Author the frozen LPub3D meta-header fixture
-- **Problem:** Author a **minimal known-good LPub3D meta header** (cover page + BOM + step
-  numbering, fixed values) as a fixture `.ldr`, plus a trivial known-good body `.ldr` (a few
-  bricks) for the toolchain smoke. This is the artifact Step 0.2 validates and that Step 7/9 pin.
+- **Problem:** Author a **minimal known-good LPub3D meta header** (BOM + step numbering, fixed
+  values) as a fixture `.ldr`, plus a trivial known-good body `.ldr` (a few bricks) for the
+  toolchain smoke. This is the artifact Step 0.2 validates and that Step 7/9 pin.
+  **AMENDED 2026-06-17 (Step 0.2 finding):** the header is **BOM-only, NO COVER_PAGE** —
+  `0 !LPUB INSERT COVER_PAGE` crashes LPub3D 2.4.9 (see 04-model-spike-result.md § Step 0.2).
 - **Type:** code
 - **Issue:** #48
 - **Flags:** --reviewers code
 - **Produces:** `tests/fixtures/lpub3d_meta_header.ldr` (frozen header), `tests/fixtures/toolchain_smoke.ldr`
 - **Done when:** both fixtures parse as valid LDraw (no syntax error when opened by LDView); the
-  meta header contains exactly the COVER_PAGE + BOM + step-numbering commands and nothing else.
+  meta header contains exactly the BOM + step-numbering commands and nothing else (NO COVER_PAGE,
+  which crashes the renderer — render-verified in Step 0.2).
 - **Depends on:** none
-- **Status:** DONE (2026-06-17)
+- **Status:** DONE (2026-06-17) — amended: BOM-only header (COVER_PAGE crashes LPub3D 2.4.9).
 
 ### Step 0.2: Toolchain + license confirmation
 - **Problem:** Confirm LDView 4.7 + LPub3D 2.4.9 headless still produce a valid PNG + multi-page
@@ -98,8 +101,11 @@ spike shows TripoSG installs cleanly and renders better.
 - **Issue:** #49
 - **Produces:** a short license + toolchain note appended to `docs/investigations/rebuild/04-model-spike-result.md`
 - **Done when:** `toolchain_smoke.ldr` → PNG via LDView and → multi-page PDF via LPub3D both
-  succeed; the frozen meta header renders a cover page + BOM; chosen-model license confirmed OK.
+  succeed; the frozen meta header renders per-step parts pages + a BOM page; chosen-model license
+  confirmed OK. **AMENDED 2026-06-17:** no cover page — COVER_PAGE crashes LPub3D 2.4.9
+  (render-verified); frozen header is BOM-only.
 - **Depends on:** Step 0.2-prep
+- **Status:** DONE (2026-06-17)
 
 ---
 
@@ -222,8 +228,9 @@ spike shows TripoSG installs cleanly and renders better.
 - **Produces:** `src/brickomancer/services/suggestion_service.py`, `instruction_service.py`,
   adapted tests
 - **Done when:** `from-image` returns exactly 3 suggestions with distinct `parts_count`, each with
-  a non-empty preview PNG and parts list; `/instructions` produces a multi-page PDF with a cover
-  page + BOM from the frozen header.
+  a non-empty preview PNG and parts list; `/instructions` produces a multi-page PDF with per-step
+  parts pages + a BOM page from the frozen header. **AMENDED 2026-06-17:** no cover page — the
+  frozen header is BOM-only (COVER_PAGE crashes LPub3D 2.4.9; render-verified in Step 0.2).
 - **Depends on:** Steps 5, 6
 
 ### Step 8: Frontend + end-to-end smoke gate

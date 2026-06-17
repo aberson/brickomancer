@@ -145,4 +145,56 @@ pin** — a bare `torch` install silently lands the CPU wheel. Pin `+cu118` expl
 
 ---
 
-*Toolchain + license confirmation (Step 0.2) is appended below once that step runs.*
+## Step 0.2 — Toolchain + license confirmation (2026-06-17)
+
+### Toolchain smoke: a real finding (COVER_PAGE crashes LPub3D 2.4.9)
+
+Rendered the Step-0.2-prep fixtures through the project's own `run_ldview` /
+`run_lpub3d`. LDView passed immediately (PNG, 45 KB). LPub3D surfaced a defect the
+pytest gate could not see — **exactly the pytest-vs-render blind spot the rebuild
+exists to close**:
+
+- **`0 !LPUB INSERT COVER_PAGE` crashes LPub3D 2.4.9** on this machine. Reproduced
+  three times: (1) bare `COVER_PAGE` with bricks in its step → LPub3D error
+  `Step with INSERT COVER_PAGE meta command cannot contain type 1-5 line` + a
+  1-page **zero-size** (`W 0 x H 0`) PDF; (2) `COVER_PAGE` alone before the first
+  `0 STEP` → **hard crash** (`LPub3D.dmp` written, no PDF); (3) `COVER_PAGE FRONT`
+  (the documented canonical form, per
+  [LPub3D meta-command docs](https://trevorsandy.github.io/lpub3d/assets/docs/lpub3d/metacommands.html))
+  → **still crashes**.
+- **Without COVER_PAGE the toolchain renders cleanly.** A body of `0 STEP`-delimited
+  brick steps + `0 !LPUB INSERT BOM` after the final step → `process succeeded
+  (result code 0)`, a **multi-page PDF (181 KB)** with per-step parts pages + a BOM
+  page. This matches the structure of the v1 LDR files that actually rendered in the
+  harness (`tmp/<uuid>/suggestion_0.ldr`): **they never contained COVER_PAGE.**
+
+**Root cause of the original false premise:** the Step-0.2-prep fixture put
+`COVER_PAGE` in the frozen header on the assumption it was "v1 proven-good" — traced
+from `ldraw_writer.py`'s *current* source. But the LDR files that v1 actually
+rendered have no COVER_PAGE; the CLAUDE.md history corroborates ("run 9 oscillation
+removed run-8 LPub3D meta commands"; COVER_PAGE was associated with the PDF=0
+sinkhole). The toolchain was validated against a real render before Phases 1-4 were
+built on the false assumption — which is the entire point of Step 0.2.
+
+**Resolution applied:** the frozen fixtures + their tests are re-based on the
+**render-verified** structure — `INSERT BOM` + step-numbering, **no COVER_PAGE**.
+`test_no_cover_page_meta` is now a positive regression guard (fails if COVER_PAGE is
+ever reintroduced). Toolchain smoke (no-cover) PASSES: multi-page PDF + BOM.
+
+**Plan impact (Steps 7 / 9):** the plan text references a "frozen COVER_PAGE + BOM
+meta header." That is corrected to **BOM-only** (the verified-renderable header). See
+the plan amendment note on Step 0.2-prep / Step 7 / Step 9. A title/cover page, if
+wanted later, needs a different mechanism than `INSERT COVER_PAGE` on this LPub3D
+version (out of scope for the rebuild's core path).
+
+### License confirmation
+
+Chosen model **Hunyuan3D-2mini** ships under the **Tencent Hunyuan Community
+License** — **confirmed acceptable** (operator, 2026-06-17) for a personal, local,
+single-user tool (the license's MAU threshold and regional restrictions are not
+triggered by personal use).
+
+### Toolchain versions (this machine)
+
+- **LDView:** bundled with LPub3D at `C:\Tools\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe` — renders PNG OK.
+- **LPub3D:** `v2.4.9 r86 (Release)` — renders multi-page PDF + BOM OK **without** COVER_PAGE.
