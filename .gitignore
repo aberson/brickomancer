@@ -5,12 +5,6 @@
 tmp/*
 !tmp/.gitkeep
 
-# Harness runtime output (reproduced by running run_harness.py)
-tests/harness/runs/*
-!tests/harness/runs/.gitkeep
-tests/harness/scores.jsonl
-tests/harness/server.log
-
 # LPub3D render cache + PDF output generated next to fixture .ldr files by the
 # toolchain smoke (regenerated on every run; never source).
 tests/fixtures/LPub3D/

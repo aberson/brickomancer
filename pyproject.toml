@@ -19,10 +19,9 @@ dependencies = [
   "python-dotenv>=1.0.0",
   "aiofiles>=23.0.0",
 ]
-# NOTE: TripoSR requires a separate CUDA-specific torch install:
-#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-#   pip install git+https://github.com/VAST-AI-Research/TripoSR.git
-# torchmesh: PyPI package name needs verification; may be part of torch3d or similar
+# NOTE (rebuild): rembg + trimesh are retained for the rebuilt image path. The chosen
+# 3D model (Hunyuan3D-2mini, see docs/investigations/rebuild/04-model-spike-result.md)
+# and its CUDA torch deps are added in Step 5 when the ImageShaper lands.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -34,12 +33,12 @@ ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100
+# Archived v1 harness reference code (docs/rebuild_reference/) is frozen for Step 9
+# reference and is not subject to the project's lint rules.
+extend-exclude = ["docs/rebuild_reference"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/harness/*.py" = ["E501"]
 
 [dependency-groups]
 dev = [

@@ -126,6 +126,9 @@ spike shows TripoSG installs cleanly and renders better.
 - **Done when:** `uv run pytest -q --ignore=tests/integration` passes on the salvaged tests;
   `uv run mypy src` and `uv run ruff check .` clean; `GET /api/status` returns 200.
 - **Depends on:** none
+- **Status:** DONE (2026-06-17) — in-place clean; image/text pipelines + old harness removed,
+  generate routes 503-stubbed (signatures preserved), harness refs archived to
+  docs/rebuild_reference/. Tests 348→157 (intentional removal of 195 throwaway tests + 9 new).
 
 ### Step 2: Define the `Shaper` interface (the swap seam)
 - **Problem:** Introduce `services/shaper.py` defining `Shaper.to_voxels(...) -> np.ndarray[bool,
