@@ -176,18 +176,29 @@ spike shows TripoSG installs cleanly and renders better.
   has exactly one connected component and zero unsupported bricks; salvaged packer tests pass;
   the masonry-offset and connectivity-repair invariant tests pass.
 - **Depends on:** Step 1
+- **Status:** DONE (2026-06-17) — Phase B graph analysis (build_connectivity_graph,
+  connected_component_count, unsupported_bricks, articulation_points) + `_merge_components`
+  (spanning-tree, cap-above bonding). cube/star → 1 component + 0 unsupported; masonry seams
+  preserved (caps sit above tested layers). KNOWN TRADEOFF deferred to Step 4: cap-above extends
+  height (hub columns force ≥1 cap layer); Step 4 bonds in-volume to remove the height cost.
 
-### Step 4: Targeted split/re-merge + physics-aware rollback
+### Step 4: Targeted split/re-merge + physics-aware rollback + in-volume bonding
 - **Problem:** Add **Phase C** (targeted split/re-merge around articulation points, bounded ≤5
   iterations widening on failure) and a **physics-aware rollback** (borrowed from BrickGPT:
   reject a placement that would create an unsupported/cut-vertex brick, backtrack). Optionally
-  **Phase D** per-layer CP-SAT (OR-Tools) only when a layer stays disconnected.
+  **Phase D** per-layer CP-SAT (OR-Tools) only when a layer stays disconnected. **Also (carried
+  from Step 3 review): replace the cap-above component-merge with IN-VOLUME bonding so connectivity
+  no longer extends build height** — bond fragment towers into the spine at shared in-grid layers
+  (articulation-driven), preserving the masonry-offset seams. This removes the ~20% height
+  overshoot the cap-above merge introduces on fragmented/hub-heavy shapes.
 - **Type:** code
 - **Issue:** #53
 - **Flags:** --reviewers code
 - **Produces:** updated `brick_packer.py`, new stability tests in `tests/test_brick_packer.py`
 - **Done when:** a known-pathological grid (star with thin arm tips) packs with zero freestanding
-  1×1 stacks and zero articulation points at arm tips; a regression test asserts no cut vertices.
+  1×1 stacks and zero articulation points at arm tips; a regression test asserts no cut vertices;
+  **the packed output adds no build-height layers beyond the input grid's top (in-volume bonding —
+  no above-grid connectivity caps), while keeping 1 connected component + 0 unsupported.**
 - **Depends on:** Step 3
 
 ---

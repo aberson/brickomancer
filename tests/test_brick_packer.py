@@ -20,9 +20,14 @@ from brickomancer.services.brick_packer import (
     _collect_footprints,
     _footprint,
     _has_connection,
+    _merge_components,
+    articulation_points,
+    build_connectivity_graph,
+    connected_component_count,
     connectivity_repair,
     interlocking_check,
     pack,
+    unsupported_bricks,
 )
 from brickomancer.services.ldraw_writer import sequence_steps, write_ldr
 
@@ -189,11 +194,20 @@ class TestPack:
         grid = _solid_cube(5)
         result = pack(grid, color_id=15)
 
-        covered = np.zeros((5, 5, 5), dtype=int)
+        x_dim, y_dim, z_dim = grid.shape
+        covered = np.zeros((x_dim, y_dim, z_dim), dtype=int)
         for bp in result:
+            # The connectivity-merge pass may add bonding bricks above the grid
+            # (a thin connective cap); those are not voxel coverage. Ignore any
+            # stud outside the original grid bounds -- every TRUE voxel must still
+            # be covered by an in-grid brick, which is what this asserts.
+            if bp.y >= y_dim:
+                continue
             for dx in range(bp.width):
                 for dz in range(bp.length):
-                    covered[bp.x + dx, bp.y, bp.z + dz] += 1
+                    cx, cz = bp.x + dx, bp.z + dz
+                    if cx < x_dim and cz < z_dim:
+                        covered[cx, bp.y, cz] += 1
 
         # Every voxel should be covered at least once
         # (repair bricks may overlap, so we allow >=1)
@@ -472,3 +486,224 @@ class TestIntegration:
                     assert _has_connection(bp, below_fps), (
                         f"Disconnected brick at ({bp.x},{bp.y},{bp.z})"
                     )
+
+
+# ---------------------------------------------------------------------------
+# Phase B: connectivity-graph analysis (Step 3)
+# ---------------------------------------------------------------------------
+
+
+def _plus_star() -> np.ndarray:
+    """A 5x3x5 plus-cross star: the x=2 plane and z=2 plane occupied at all y.
+
+    This is the done-when star fixture. Before the merge it packs to 7 disjoint
+    components (arm-tip 1x1 towers + center); after Phase B it must be exactly one.
+    """
+    grid = np.zeros((5, 3, 5), dtype=bool)
+    grid[2, :, :] = True
+    grid[:, :, 2] = True
+    return grid
+
+
+class TestConnectivityGraph:
+    def test_empty(self):
+        g = build_connectivity_graph([])
+        assert g.number_of_nodes() == 0
+        assert g.number_of_edges() == 0
+
+    def test_single_brick(self):
+        g = build_connectivity_graph([_make_bp(0, 0, 0)])
+        assert g.number_of_nodes() == 1
+        assert g.number_of_edges() == 0
+
+    def test_two_stacked_connected(self):
+        """Two 1x1 sharing an (x,z) on adjacent layers form one edge / one component."""
+        g = build_connectivity_graph([_make_bp(0, 0, 0), _make_bp(0, 1, 0)])
+        assert g.number_of_edges() == 1
+        assert connected_component_count([_make_bp(0, 0, 0), _make_bp(0, 1, 0)]) == 1
+
+    def test_two_stacked_disconnected(self):
+        """Bricks at different (x,z) on adjacent layers share no stud: 0 edges."""
+        placements = [_make_bp(0, 0, 0), _make_bp(3, 1, 3)]
+        assert build_connectivity_graph(placements).number_of_edges() == 0
+        assert connected_component_count(placements) == 2
+
+    def test_no_lateral_edges(self):
+        """Two XZ-adjacent 1x1 on the SAME layer are not bonded (no stud edge)."""
+        placements = [_make_bp(0, 0, 0), _make_bp(1, 0, 0)]
+        assert build_connectivity_graph(placements).number_of_edges() == 0
+        assert connected_component_count(placements) == 2
+
+    def test_three_layer_chain(self):
+        """A vertical 1x1 chain is a path graph: 2 edges, 1 component."""
+        placements = [_make_bp(0, 0, 0), _make_bp(0, 1, 0), _make_bp(0, 2, 0)]
+        assert build_connectivity_graph(placements).number_of_edges() == 2
+        assert connected_component_count(placements) == 1
+
+    def test_duplicate_key_raises(self):
+        """Two placements with the same (x,y,z,w,l) collide -- loud, not silent."""
+        dup = [_make_bp(0, 0, 0, color=15), _make_bp(0, 0, 0, color=4)]
+        with pytest.raises(AssertionError):
+            build_connectivity_graph(dup)
+
+
+class TestDoneWhenInvariants:
+    """The Step 3 done-when: cube + star -> 1 component + 0 unsupported."""
+
+    def test_cube_single_component(self):
+        assert connected_component_count(pack(_solid_cube(5), color_id=15)) == 1
+
+    def test_cube_zero_unsupported(self):
+        assert unsupported_bricks(pack(_solid_cube(5), color_id=15)) == []
+
+    def test_star_single_component(self):
+        assert connected_component_count(pack(_plus_star(), color_id=14)) == 1
+
+    def test_star_zero_unsupported(self):
+        assert unsupported_bricks(pack(_plus_star(), color_id=14)) == []
+
+
+class TestUnsupportedBricks:
+    def test_ground_layer_always_supported(self):
+        assert unsupported_bricks([_make_bp(0, 0, 0), _make_bp(1, 0, 1)]) == []
+
+    def test_detects_floating(self):
+        """A brick at y>0 with no stud-sharing brick below is unsupported."""
+        floating = _make_bp(3, 1, 3)
+        result = unsupported_bricks([_make_bp(0, 0, 0), floating])
+        assert result == [floating]
+
+
+class TestArticulationPoints:
+    def test_empty(self):
+        assert articulation_points([]) == []
+
+    def test_returns_brick_placements(self):
+        """On a 3-brick vertical chain the middle brick is the cut vertex."""
+        chain = [_make_bp(0, 0, 0), _make_bp(0, 1, 0), _make_bp(0, 2, 0)]
+        cut = articulation_points(chain)
+        assert all(isinstance(bp, BrickPlacement) for bp in cut)
+        assert [(bp.x, bp.y, bp.z) for bp in cut] == [(0, 1, 0)]
+
+    def test_star_has_articulation_points(self):
+        """The packed star has cut vertices (Step-4 input); assert non-empty + type."""
+        cut = articulation_points(pack(_plus_star(), color_id=14))
+        assert cut  # non-empty
+        assert all(isinstance(bp, BrickPlacement) for bp in cut)
+
+    def test_articulation_point_actually_disconnects(self):
+        """A reported cut vertex, when removed, must disconnect the graph (definition)."""
+        # A 5-brick T: vertical chain (0,0,0)-(0,1,0)-(0,2,0) with a branch at the top
+        # sharing the top stud's column upward is overkill; use the canonical chain +
+        # a second branch off the middle so the middle is a true cut vertex.
+        bricks = [
+            _make_bp(0, 0, 0), _make_bp(0, 1, 0), _make_bp(0, 2, 0),  # spine
+        ]
+        cut = articulation_points(bricks)
+        assert [(bp.x, bp.y, bp.z) for bp in cut] == [(0, 1, 0)]
+        # Removing the middle brick splits the chain into two components.
+        remaining = [bp for bp in bricks if (bp.x, bp.y, bp.z) != (0, 1, 0)]
+        assert connected_component_count(remaining) == 2
+
+
+class TestMergeComponents:
+    def test_idempotent_on_merged(self):
+        """Re-running merge on an already-1-component build adds nothing."""
+        packed = pack(_solid_cube(5), color_id=15)
+        assert _merge_components(packed, 15) == packed
+
+    def test_single_layer_not_merged(self):
+        """A flat single-layer build is left flat (no stacked caps)."""
+        result = pack(np.ones((4, 1, 4), dtype=bool))
+        assert all(bp.y == 0 for bp in result)
+
+    def test_merges_adjacent_disconnected_columns(self):
+        """Three cardinally-adjacent 1x1 towers (no shared studs) merge to one.
+
+        This is the fragment scenario: adjacent columns that never bond laterally.
+        (Genuinely separated, non-adjacent towers correctly stay multi-component.)
+        """
+        towers = [
+            _make_bp(0, 0, 0), _make_bp(0, 1, 0),
+            _make_bp(1, 0, 0), _make_bp(1, 1, 0),
+            _make_bp(2, 0, 0), _make_bp(2, 1, 0),
+        ]
+        assert connected_component_count(towers) == 3
+        merged = _merge_components(towers, 15)
+        assert connected_component_count(merged) == 1
+        assert unsupported_bricks(merged) == []
+
+    def test_non_adjacent_components_stay_separate(self):
+        """Physically separated towers (a gap between them) are NOT force-merged."""
+        far = [
+            _make_bp(0, 0, 0), _make_bp(0, 1, 0),
+            _make_bp(4, 0, 4), _make_bp(4, 1, 4),
+        ]
+        merged = _merge_components(far, 15)
+        assert connected_component_count(merged) == 2
+
+    def test_merge_caps_are_supported(self):
+        """Every brick the merge ADDS (cap + extension) must itself be supported.
+
+        Guards the cap-placement invariant directly: extract the bricks above the
+        original top layer and assert none float (each grips >=1 stud below).
+        """
+        towers = [
+            _make_bp(0, 0, 0), _make_bp(0, 1, 0),
+            _make_bp(1, 0, 0), _make_bp(1, 1, 0),
+            _make_bp(2, 0, 0), _make_bp(2, 1, 0),
+        ]
+        merged = _merge_components(towers, 15)
+        # No brick anywhere is unsupported (caps included).
+        assert unsupported_bricks(merged) == []
+        # And the merge genuinely added bricks above the original top (y=1).
+        assert any(bp.y > 1 for bp in merged)
+
+    def test_merge_is_deterministic(self):
+        """Same multi-component input -> identical merge output (no dict-order flakiness)."""
+        towers = [
+            _make_bp(0, 0, 0), _make_bp(0, 1, 0),
+            _make_bp(1, 0, 0), _make_bp(1, 1, 0),
+            _make_bp(2, 0, 0), _make_bp(2, 1, 0),
+        ]
+        def _key(bp: BrickPlacement) -> tuple:
+            return (bp.x, bp.y, bp.z, bp.width, bp.length, bp.part_id, bp.color_id)
+
+        a = sorted(_key(bp) for bp in _merge_components(towers, 15))
+        b = sorted(_key(bp) for bp in _merge_components(towers, 15))
+        assert a == b
+
+    def test_masonry_6x2x4_preserved_after_merge(self):
+        """The 6x2x4 masonry grid (multi-component) keeps even!=odd seams after merge."""
+        result = pack(np.ones((6, 2, 4), dtype=bool))
+        assert connected_component_count(result) == 1
+
+        def seam_set(layer: int) -> frozenset[int]:
+            return frozenset(bp.x + bp.width for bp in result if bp.y == layer)
+
+        assert seam_set(0) != seam_set(1)
+
+    def test_masonry_8x2x4_preserved_after_merge(self):
+        """The 8x2x4 grid keeps a multi-stud brick in every (in-grid) layer after merge."""
+        result = pack(np.ones((8, 2, 4), dtype=bool))
+        assert connected_component_count(result) == 1
+        for layer in (0, 1):
+            widths = [bp.width * bp.length for bp in result if bp.y == layer]
+            assert any(area > 1 for area in widths), f"layer {layer} is all 1x1"
+
+    def test_masonry_abab_preserved_after_merge(self):
+        """The merge must NOT disturb the masonry ABAB seams (caps sit above).
+
+        Explicit protection for the highest-risk salvaged invariant: a 6x4x4 grid
+        is multi-component, so _merge_components fires -- and its caps must land
+        above the tested layers (0-3), leaving the seam sets untouched.
+        """
+        result = pack(np.ones((6, 4, 4), dtype=bool))
+        assert connected_component_count(result) == 1
+
+        def seam_set(layer: int) -> frozenset[int]:
+            return frozenset(bp.x + bp.width for bp in result if bp.y == layer)
+
+        assert seam_set(0) == seam_set(2)
+        assert seam_set(1) == seam_set(3)
+        assert seam_set(0) != seam_set(1)

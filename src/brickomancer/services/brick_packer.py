@@ -16,6 +16,7 @@ connectivity_repair(placements) -> list[BrickPlacement]
 
 import math
 
+import networkx as nx
 import numpy as np
 
 from brickomancer.models.brick import (
@@ -60,8 +61,8 @@ def _boundary_voxels(layer_slice: np.ndarray) -> set[tuple[int, int]]:
                 continue
             neighbors = 0
             for dx, dz in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                nx, nz = x + dx, z + dz
-                if 0 <= nx < X and 0 <= nz < Z and layer_slice[nx, nz]:
+                nbx, nbz = x + dx, z + dz
+                if 0 <= nbx < X and 0 <= nbz < Z and layer_slice[nbx, nbz]:
                     neighbors += 1
             if neighbors < 3:
                 boundary.add((x, z))
@@ -165,9 +166,9 @@ def _remove_isolated_pillars(placements: list[BrickPlacement]) -> list[BrickPlac
                 for dnz in [-1, 0, 1]:
                     if dnx == 0 and dnz == 0:
                         continue
-                    nx, nz = sx + dnx, sz + dnz
-                    if (nx, nz) not in footprint_studs:
-                        adjacent_studs.add((nx, nz))
+                    nbx, nbz = sx + dnx, sz + dnz
+                    if (nbx, nbz) not in footprint_studs:
+                        adjacent_studs.add((nbx, nbz))
 
         min_y = min(layers)
         isolated_layers = {
@@ -250,17 +251,17 @@ def _brace_thin_columns(placements: list[BrickPlacement], color_id: int) -> list
         min_y = column_min_y[xz]
         candidates = sorted(cardinal, key=lambda p: (p[0] - cx) ** 2 + (p[1] - cz) ** 2)
 
-        for nx, nz in candidates:
-            pos = (nx, min_y, nz)
+        for nbx, nbz in candidates:
+            pos = (nbx, min_y, nbz)
             if pos not in existing_positions and pos not in support_positions:
                 support_positions.add(pos)
                 support_bricks.append(
                     BrickPlacement(
                         part_id=BRICK_PART_IDS[(1, 1)],
                         color_id=color_id,
-                        x=nx,
+                        x=nbx,
                         y=min_y,
-                        z=nz,
+                        z=nbz,
                         width=1,
                         length=1,
                     )
@@ -459,6 +460,256 @@ def connectivity_repair(placements: list[BrickPlacement]) -> list[BrickPlacement
 
 
 # ---------------------------------------------------------------------------
+# Phase B: connectivity-graph analysis
+# ---------------------------------------------------------------------------
+#
+# Makes structural soundness something the packer can *see* (vs v1's post-hoc
+# heuristic patches). A brick is a node keyed by its (x, y, z, width, length)
+# position+dims; an edge joins two bricks on ADJACENT layers (|Ya - Yb| == 1)
+# that share >= 1 stud footprint -- i.e. one rests on the other. There are NO
+# same-layer lateral edges: in real LEGO, studs only bond vertically, so two
+# side-by-side bricks are NOT structurally bonded unless a brick above or below
+# spans both. This is also what makes articulation points meaningful for Step 4.
+
+_BrickKey = tuple[int, int, int, int, int]
+
+
+def _brick_key(bp: BrickPlacement) -> _BrickKey:
+    """Stable graph node key: position + dims (unique per placed brick)."""
+    return (bp.x, bp.y, bp.z, bp.width, bp.length)
+
+
+def build_connectivity_graph(placements: list[BrickPlacement]) -> nx.Graph:
+    """Build the brick connectivity graph (nodes = bricks, edges = stud bonds).
+
+    Node key is ``(x, y, z, width, length)``. An edge joins two bricks on
+    adjacent layers that share >= 1 stud. Raises if two placements collide on the
+    same key (the one-brick-per-position-and-dims assumption -- loud so a future
+    bug surfaces here rather than silently merging nodes).
+    """
+    graph: nx.Graph = nx.Graph()
+    by_layer: dict[int, list[BrickPlacement]] = {}
+    for bp in placements:
+        key = _brick_key(bp)
+        if key in graph:
+            raise AssertionError(f"duplicate brick key {key} in connectivity graph")
+        graph.add_node(key)
+        by_layer.setdefault(bp.y, []).append(bp)
+
+    for y, layer_bricks in by_layer.items():
+        above = by_layer.get(y + 1)
+        if not above:
+            continue
+        for lower in layer_bricks:
+            lower_fp = _footprint(lower)
+            for upper in above:
+                if lower_fp & _footprint(upper):
+                    graph.add_edge(_brick_key(lower), _brick_key(upper))
+    return graph
+
+
+def connected_components_list(placements: list[BrickPlacement]) -> list[set[_BrickKey]]:
+    """Return the connectivity graph's connected components as sets of brick keys."""
+    return list(nx.connected_components(build_connectivity_graph(placements)))
+
+
+def connected_component_count(placements: list[BrickPlacement]) -> int:
+    """Return the number of connected components (1 = a single bonded assembly)."""
+    if not placements:
+        return 0
+    return nx.number_connected_components(build_connectivity_graph(placements))
+
+
+def unsupported_bricks(placements: list[BrickPlacement]) -> list[BrickPlacement]:
+    """Return bricks at y>0 that share no stud with the layer below (would float).
+
+    "Supported" means LEGO-attached: a brick is supported if it grips >= 1 stud of
+    the layer below -- the real-world attachment rule (a 2x2 brick held by a single
+    stud is stable). It does NOT require every stud to be backed; a brick may
+    legitimately overhang (e.g. a merge cap whose 2 bonding studs sit on towers and
+    whose other 2 studs cantilever over empty space). Distinct from connectivity: a
+    brick can belong to the main component via a vertical neighbor yet still be
+    individually unsupported. Ground-layer bricks (y == 0) are always supported.
+    """
+    by_layer_fp: dict[int, set[tuple[int, int]]] = {}
+    for bp in placements:
+        by_layer_fp.setdefault(bp.y, set()).update(_footprint(bp))
+
+    result: list[BrickPlacement] = []
+    for bp in placements:
+        if bp.y == 0:
+            continue
+        below = by_layer_fp.get(bp.y - 1, set())
+        if not (_footprint(bp) & below):
+            result.append(bp)
+    return result
+
+
+def articulation_points(placements: list[BrickPlacement]) -> list[BrickPlacement]:
+    """Return cut-vertex bricks (removal disconnects the graph) -- structural weak points.
+
+    Computed here in Step 3; targeted for elimination at arm tips in Step 4's
+    split/re-merge pass. Keys are mapped back to their BrickPlacement objects.
+    """
+    graph = build_connectivity_graph(placements)
+    key_to_bp = {_brick_key(bp): bp for bp in placements}
+    return [key_to_bp[k] for k in nx.articulation_points(graph)]
+
+
+def _cap_positions(
+    s: tuple[int, int], n: tuple[int, int]
+) -> list[tuple[int, int]]:
+    """2x2 anchor positions (min-corner) whose block covers both adjacent studs s, n.
+
+    Two studs one apart fit in a 2x2 block two ways (the overhang goes either side
+    of the shared axis). Returning both lets the caller pick the one that does not
+    collide with an already-placed cap.
+    """
+    (sx, sz), (nx_, nz_) = s, n
+    cx, cz = min(sx, nx_), min(sz, nz_)
+    if sx == nx_:  # z-adjacent: overhang in +x or -x
+        return [(cx, cz), (cx - 1, cz)]
+    return [(cx, cz), (cx, cz - 1)]  # x-adjacent: overhang in +z or -z
+
+
+def _merge_components(
+    placements: list[BrickPlacement], color_id: int, max_iterations: int = 50
+) -> list[BrickPlacement]:
+    """Graph-driven repair: bond disconnected components into ONE assembly.
+
+    The structural fix v1's heuristic passes never achieved: a solid cube packs to
+    4 components and a plus-star to 7 -- full-height 1x1 towers at corners/arm-tips
+    that touch the spine only laterally and so share no stud across layers
+    (correctly separate graph components). The repair:
+
+      1. Compute the components and each column's top layer ONCE (from the input --
+         never from caps, so anchor heights cannot run away).
+      2. Build the component-adjacency graph (two components are adjacent when they
+         own cardinally-adjacent columns) and a spanning tree rooted at the anchor
+         (the component with the most ground bricks).
+      3. For each tree edge, bond the two components with a 2x2 CAP brick placed one
+         layer ABOVE the taller bonded column. The cap shares a stud with each
+         column's top brick (a vertical edge to each), merging the two components.
+
+    Caps sit ABOVE the build, so the existing layers -- and their masonry seams --
+    are never disturbed; equal-height towers (cube, star, solid grids) need no
+    column extension. Unequal columns are extended up to the cap with 1x1 bricks;
+    cap overhang collisions are resolved by trying both overhang sides at each
+    candidate layer, searching upward for the lowest free slot.
+
+    A disconnected XZ footprint (genuinely separate objects with no cardinally-
+    adjacent columns) correctly stays multi-component -- the spanning tree only
+    reaches components reachable through adjacency.
+
+    KNOWN TRADEOFF (Step 4 refines): caps above the build EXTEND its height. A
+    hub column bonding several arms (e.g. the plus-star center bonding 4 arms)
+    forces caps onto successive layers, so very fragmented or hub-heavy shapes can
+    gain multiple cap layers. For solid-ish real ImageShaper volumes the fragment
+    count is low and the overhead is small; Step 4's articulation-driven split/
+    re-merge is the planned place to bond in-volume and remove this height cost.
+    """
+    base = list(placements)
+    if not base or max(bp.y for bp in base) == 0:
+        # A single flat layer has no vertical structure to bond -- every brick is
+        # its own graph component, but stacking caps would wrongly turn a flat
+        # build into a multi-layer one. Leave it flat (it sits on a baseplate).
+        return base
+    components = connected_components_list(base)
+    if len(components) <= 1:
+        return base
+
+    key_to_comp: dict[_BrickKey, int] = {
+        key: ci for ci, comp in enumerate(components) for key in comp
+    }
+    occupied: set[tuple[int, int, int]] = set()
+    col_top: dict[tuple[int, int], int] = {}
+    col_comps: dict[tuple[int, int], set[int]] = {}
+    for bp in base:
+        ci = key_to_comp[_brick_key(bp)]
+        for sx, sz in _footprint(bp):
+            occupied.add((sx, bp.y, sz))
+            col_top[(sx, sz)] = max(col_top.get((sx, sz), -1), bp.y)
+            col_comps.setdefault((sx, sz), set()).add(ci)
+
+    # Component adjacency, with a representative (stud, neighbor) bond per pair.
+    adjacency: dict[tuple[int, int], tuple[tuple[int, int], tuple[int, int]]] = {}
+    neighbors: dict[int, set[int]] = {ci: set() for ci in range(len(components))}
+    for (sx, sz), cas in col_comps.items():
+        for nx_, nz_ in ((sx + 1, sz), (sx - 1, sz), (sx, sz + 1), (sx, sz - 1)):
+            cbs = col_comps.get((nx_, nz_))
+            if not cbs:
+                continue
+            for ca in cas:
+                for cb in cbs:
+                    if ca == cb:
+                        continue
+                    pair = (min(ca, cb), max(ca, cb))
+                    neighbors[ca].add(cb)
+                    if pair not in adjacency:
+                        adjacency[pair] = ((sx, sz), (nx_, nz_))
+
+    ground = [sum(1 for k in comp if k[1] == 0) for comp in components]
+    anchor = max(range(len(components)), key=lambda i: (ground[i], len(components[i])))
+
+    # Spanning tree (BFS) over the component-adjacency graph from the anchor.
+    visited = {anchor}
+    queue = [anchor]
+    tree_edges: list[tuple[int, int]] = []
+    while queue:
+        u = queue.pop(0)
+        for v in sorted(neighbors[u]):
+            if v not in visited:
+                visited.add(v)
+                tree_edges.append((min(u, v), max(u, v)))
+                queue.append(v)
+
+    new_bricks: list[BrickPlacement] = []
+    for pair in tree_edges:
+        s, n = adjacency[pair]
+        target = max(col_top[s], col_top[n])
+
+        # Find the LOWEST layer (>= target+1) at which SOME 2x2 cap position is
+        # collision-free, trying both overhang sides at each layer. Searching both
+        # positions per layer (rather than bumping one position) guarantees the
+        # chosen layer is genuinely free -- no cap is ever placed on an occupied
+        # slot (which would later trip the duplicate-key guard in the graph).
+        cap_layer = target + 1
+        cap_pos: tuple[int, int] | None = None
+        for candidate in range(target + 1, target + 1 + max_iterations):
+            for cap_x, cap_z in _cap_positions(s, n):
+                studs = [(cap_x + dx, candidate, cap_z + dz) for dx in (0, 1) for dz in (0, 1)]
+                if not any(p in occupied for p in studs):
+                    cap_layer, cap_pos = candidate, (cap_x, cap_z)
+                    break
+            if cap_pos is not None:
+                break
+        if cap_pos is None:
+            # No free slot within the search window: skip this bond rather than
+            # place a colliding cap. The component stays separate (surfaced by the
+            # done-when 1-component test) -- never corrupts the placement list.
+            continue
+
+        # Extend each bonded column up to the cap base so the cap shares its stud.
+        for cx, cz in (s, n):
+            for yy in range(col_top[(cx, cz)] + 1, cap_layer):
+                if (cx, yy, cz) not in occupied:
+                    occupied.add((cx, yy, cz))
+                    new_bricks.append(
+                        BrickPlacement(BRICK_PART_IDS[(1, 1)], color_id, cx, yy, cz, 1, 1)
+                    )
+
+        cap_x, cap_z = cap_pos
+        for dx in (0, 1):
+            for dz in (0, 1):
+                occupied.add((cap_x + dx, cap_layer, cap_z + dz))
+        new_bricks.append(
+            BrickPlacement(BRICK_PART_IDS[(2, 2)], color_id, cap_x, cap_layer, cap_z, 2, 2)
+        )
+
+    return base + new_bricks
+
+
+# ---------------------------------------------------------------------------
 # Main packer
 # ---------------------------------------------------------------------------
 
@@ -611,10 +862,17 @@ def pack(
                     placements.append(candidate_1x1)
                     covered[x, z] = True
 
-    # Remove isolated pillars, repair connectivity, add floor support, tile top surface
+    # Phase B repair pipeline. The v1 heuristic touch-ups run first (kept for now
+    # -- Step 4 folds/deletes them once the articulation-driven repair proves
+    # subsumption), each of which may ADD bricks; connectivity_repair guarantees
+    # 0 unsupported. _merge_components runs LAST among structural passes so it sees
+    # every added brick and bonds the whole thing into ONE component -- its caps
+    # sit ABOVE the build, so running last does not disturb the masonry seams.
+    # Surface tiles run after (tiles preserve footprint, so connectivity is intact).
     placements = _remove_isolated_pillars(placements)
     placements = _fill_central_hub(placements, grid, color_id)
-    placements = connectivity_repair(placements)
+    placements = connectivity_repair(placements)        # SUPPORT kernel: 0 unsupported
     placements = _add_floor_support(placements, color_id)
     placements = _brace_thin_columns(placements, color_id)
+    placements = _merge_components(placements, color_id)  # MERGE: -> 1 connected component
     return _apply_surface_tiles(placements)
