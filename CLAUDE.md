@@ -79,50 +79,40 @@ brickomancer/
 
 ## Current state
 
-Steps 1–11 complete (2026-06-11); Harness Steps 12–18 complete + post-build fixes + nine harness runs (2026-06-13/14/15). **Harness refactored (2026-06-15): judge+applier architecture.** 340 unit tests passing, 0 type errors, 0 lint violations.
+**FULL REBUILD in progress** (decided 2026-06-16; v1 plateaued at ~5/10 for architectural reasons —
+the silhouette+dome image path fabricated depth, and the pytest-only harness gate never re-rendered).
+Plan: [`documentation/rebuild-plan.md`](documentation/rebuild-plan.md). Investigation +
+distillation: [`docs/investigations/rebuild/`](docs/investigations/rebuild/). GitHub umbrella #46,
+step issues #47-#59 (namespaced "Rebuild —"). The old v1 harness was REMOVED in Phase 1 (rebuilt
+fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
 
-**Harness architecture:** `run_harness.py` is a thin entry point. Submodules: `pipeline.py`, `advisor.py`, `server.py`, `judge.py`, `applier.py`. Loop: pipeline → 9 advisors (including `warnings_judge`) → quality gate → `judge` (produces structured change brief) → `apply` (Claude subprocess, pytest gate, commit or revert). `developer.py` deleted.
+**Progress (HEAD `a88160b`, pushed): Phase 0 + Phase 1 + Phase 2 Step 3 DONE.** 210 tests passing,
+0 type errors, 0 lint violations.
+- **Phase 0:** Hunyuan3D-2mini chosen for image→3D (TripoSG install-blocked on Windows). **Toolchain
+  finding: `INSERT COVER_PAGE` crashes LPub3D 2.4.9 → the frozen instruction header is BOM-only**
+  (no cover page; render-verified).
+- **Phase 1:** in-place clean — `image_pipeline.py`/`text_pipeline.py` + old harness removed; the
+  `/api/generate/from-image` and `from-text` routes are **503-stubbed** until the Shapers land
+  (Steps 5/6); `/api/generate/instructions` + `/api/status` unchanged. The `Shaper` seam
+  (`services/shaper.py`, `to_voxels() -> (X,Y,Z) bool grid`) is the swap point everything downstream
+  builds against; grid-dim constants live in `models/brick.py`.
+- **Phase 2 Step 3:** connectivity-graph packer (`build_connectivity_graph`,
+  `connected_component_count`, `unsupported_bricks`, `articulation_points`, `_merge_components`).
+  cube/star → 1 connected component + 0 unsupported; masonry seams preserved.
 
-**Judge output schema:** `{dimension, file_path, rationale, approach_description, functions_to_modify, constraints_to_preserve, anti_patterns_to_avoid, blocking_issues, confidence}`. `blocking_issues` non-empty → applier logs SKIPPED_BLOCKED and skips iteration.
+**Next action: Phase 2 Step 4 (#53)** — in-volume bonding (replace the cap-above merge so connectivity
+adds no build height) + split/re-merge + physics rollback. Build-ready spec at
+[`docs/investigations/rebuild/06-step4-design.md`](docs/investigations/rebuild/06-step4-design.md).
+Deferred to a fresh session because zero-added-height needs a `(2,1)` part + an `ldraw_writer` 90°
+rotation matrix that is render-sensitive (needs an operator LDView render UAT). A z-only attempt was
+measured (cube +1, star +3) and reverted — see the spec.
 
-**`warnings_judge` (9th advisor):** reads `scores_history` (last 15 rows); detects oscillation, revert storms, regression, stagnation; score 10=healthy, 0=crisis.
+**`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as a Windows user environment variable (not `.env`). Load in
+PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`.
+The Bash tool does NOT inherit Windows user env vars.
 
-**Committed improvements to date (cumulative):**
-- 8bd95b3: axis transpose (star face → XZ plane)
-- 81fd8e2: tile Y-coordinate fix (tiles flush on studs)
-- bd1b576: subject-color filter (yellow star over white background)
-- ea0f2d0: masonry offset on odd brick layers (build stability)
-- 96ffeb8: replaced TripoSR with 2D silhouette extrusion
-- 6d67628: Y-layer-first step sequencing in ldraw_writer
-- acf8ca6: trailing `0 STEP` after every step including the last
-- (shape-quality plan): sparse-fill guard, 2×2 OR-pool, integration test, axis-convention guard
-- d4405b0/6d6f8a2: BOM page insert + position fix
-- 7d202dc/2c05feb/90efe32/0533e5e: alternating orientation, tile decomposition, FADE STEPS fix, camera 45°
-- (run 8, 15 commits): COVER_PAGE, FADE_STEPS, HIGHLIGHT_STEP; subject-color masking; Lab palette cache; secondary color by lightness; camera 65°; masonry Z-scan
-- (run 9 — partial regression): oscillation removed run-8 LPub3D meta commands
-- bcb4382: history injection, LPub3D reference, parse-error retry, test-failure retry
-- 689f776: two-stage OR-pool downsampling (shape_fidelity root cause fix)
-- (harness refactor): judge+applier architecture, warnings_judge, 340 tests
-
-**Pre-run-10 dim scores (run 9 end state):**
-- pdf_completeness: 0 — LPub3D meta commands removed by run-9 oscillation
-- instruction_clarity: 1
-- build_stability: 2 (1×1 pillars at star arm tips)
-- shape_fidelity: 3 (root cause fixed in 689f776)
-- reference_fidelity: 4; aesthetics: 5–6; color_match: 7; technical_validity: 5–9
-
-**Harness image-passing note:** `claude -p` does not support `--image`. Images passed as absolute paths in prompt with "Use your Read tool to view this image." LDR content truncated to 400 lines. Advisor timeout 240s, judge/applier timeout 300s/600s.
-
-**`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as Windows user environment variable (not `.env` file). Inherited by `.bat` launcher. Load manually in PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`. The Bash tool does NOT inherit Windows user env vars — always launch harness from PowerShell.
-
-**pytest note:** Use `uv run pytest -q --ignore=tests/integration` for the clean gate. Harness always uses `--ignore=tests/integration`. Integration gate: `BRICKOMANCER_INTEGRATION=1 uv run pytest tests/integration/ -v`.
-
-**Next action:** Run harness 20 iterations:
-```powershell
-$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")
-$env:PATH += ";C:\Tools\LPub3D"
-uv run python tests/harness/run_harness.py --iterations 20
-```
+**pytest note:** clean gate is `uv run pytest -q --ignore=tests/integration`. Integration gate:
+`BRICKOMANCER_INTEGRATION=1 uv run pytest tests/integration/ -v`.
 
 ## Environment requirements
 
