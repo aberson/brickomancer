@@ -1,8 +1,40 @@
 # 06 — Step 4 design spec (in-volume bonding + split/re-merge + physics rollback)
 
-**Status:** build-ready spec for a fresh session. Produced by a 5-agent design workflow
+**Status:** ✅ IMPLEMENTED 2026-06-18 (240 tests, 0 type errors, 0 lint; render-verified).
+**Issue:** #53. **Depends on:** Step 3.
+
+## What actually shipped (deltas from the spec below)
+
+The spec's plan held up; a few things changed during implementation + a 3-agent adversarial review:
+
+- **Hub solved by Z-EXTEND, not decompose.** The plus-star centre is a degree-4 hub on a 3-tall
+  column; the spec's "spread hub bonds across distinct layers" can't fit 4 connections in 3 layers
+  with 2-wide bonds. The fix that works: a `z_extend` strategy that grows an existing `(1,N)` z-brick
+  to `(1,N+1)` to absorb a z-adjacent fragment WITHOUT consuming a layer (preserving the brick's span
+  that holds the far arm). Strategy ranking: z-clean → z-extend → x-clean → z-decompose → x-decompose.
+- **Strict-merge guard is load-bearing.** A primary bond must STRICTLY reduce the component count.
+  Non-strict "no increase" let a decompose merge one pair while re-splitting another at net-zero,
+  leaving the star a layer too tall. (`_bond_guards_ok(..., require_merge=True)`.)
+- **Seam-reuse gate kept (not the symmetric-same-parity variant).** x-bonds rank below all z
+  strategies, so on solid masonry grids a z-bond always wins and x-bonds never fire — the masonry ABAB
+  seams are protected by the z-PREFERENCE itself. The gate is a secondary guard.
+- **Tile pass is now 1-FOR-1 (adversarial-review BLOCKER).** Removing the cap-above merge exposed
+  load-bearing wide bricks on the TOP surface; the old strip/unit tile-split severed those bonds
+  (cube (7,2,3) → 4 components). Tiles now convert only when an exact `(w,l)` tile exists; otherwise
+  the brick is kept (studs visible — a cosmetic cost, not a severed bond).
+- **`(2,1)` render-VERIFIED in-session** (not just an operator hand-off): the matrix
+  `0 0 1 0 1 0 -1 0 0` renders the `(2,1)` PERPENDICULAR to a known-correct `(1,2)`, confirming X-span.
+  Re-runnable via `scripts/step4_render_uat.py`. (det=+1 / orthonormality is also a unit assertion.)
+- **Phase D (CP-SAT) skipped** as the spec advised — no disconnected-layer case survives.
+- **Known limitation:** minimum-depth slabs (Z=2) and Y=2,Z∈{5,9} keep +1/+2 height via the cap
+  fallback (still 1 component + 0 unsupported). All THICK grids (Y≥3 ∧ Z≥3 — real voxelised objects)
+  are zero-height. Documented + guarded by `TestStep4SolidGridRobustness`.
+
+---
+
+**(original build-ready spec follows)** — Produced by a 5-agent design workflow
 (2026-06-17) and refined by an empirical investigation that REVERTED a partial Step-4 attempt.
-**Issue:** #53. **Feasibility:** hard-but-doable. **Depends on:** Step 3 (`9b6802d`, committed).
+**Feasibility:** hard-but-doable. **Depends on:** Step 3 (`9b6802d`, committed).
 
 ## What Step 4 must deliver
 

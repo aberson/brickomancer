@@ -24,6 +24,17 @@ LDraw coordinate system
 Line format:
   1 <color_id> <x> <y> <z> 1 0 0 0 1 0 0 0 1 <part_file>.dat
 
+Brick orientation
+-----------------
+  LDraw part 3004 (Brick 1x2) is natively Z-spanning (x_size=20, z_size=40 per
+  data/ldraw/dimensions.csv), so the packer's (width=1, length=2) brick renders
+  correctly with the identity matrix. The bond-only (width=2, length=1) brick is
+  the SAME part rotated 90 deg about Y so its two studs run along X instead of Z;
+  it carries the rotation matrix ``0 0 1 0 1 0 -1 0 0``. The translation (centroid)
+  is orientation-agnostic -- _to_ldu already centers any (w, l) footprint -- so only
+  the matrix differs. The rotation is render-verifiable only (an LDView UAT), not by
+  unit assertions on geometry; the matrix value itself is asserted in tests.
+
 Step markers:
   ``0 STEP`` is inserted after every non-empty step including the last, so
   LPub3D renders each step as a separate page.  ``0 !LPUB INSERT BOM`` is
@@ -40,6 +51,12 @@ from brickomancer.models.brick import TILE_PART_IDS, BrickPlacement
 _STUD_LDU = 20   # 1 stud = 20 LDU in X and Z
 _LAYER_LDU = 24  # 1 layer = 24 LDU in Y
 _TILE_HEIGHT_LDU = 8  # tiles are 8 LDU tall (same as a plate)
+
+# Orientation matrices (a b c d e f g h i in the LDraw type-1 line).
+_IDENTITY_MATRIX = "1 0 0 0 1 0 0 0 1"
+# 90 deg rotation about Y: maps part-Z (the native 2-stud axis of 3004) onto model-X
+# so a (width=2, length=1) brick spans X. Used for bond-only (2,1) bricks.
+_ROT_Y_90_MATRIX = "0 0 1 0 1 0 -1 0 0"
 
 _TILE_PART_ID_SET: frozenset[str] = frozenset(TILE_PART_IDS.values())
 
@@ -65,9 +82,14 @@ def _to_ldu(bp: BrickPlacement) -> tuple[int, int, int]:
 
 
 def _brick_line(bp: BrickPlacement) -> str:
-    """Return the LDraw ``1 ...`` line for a single brick."""
+    """Return the LDraw ``1 ...`` line for a single brick.
+
+    Bond-only (width=2, length=1) bricks are part 3004 rotated 90 deg about Y so
+    their two studs run along X; every other brick uses the identity matrix.
+    """
     x, y, z = _to_ldu(bp)
-    return f"1 {bp.color_id} {x} {y} {z} 1 0 0 0 1 0 0 0 1 {bp.part_id}.dat"
+    matrix = _ROT_Y_90_MATRIX if (bp.width, bp.length) == (2, 1) else _IDENTITY_MATRIX
+    return f"1 {bp.color_id} {x} {y} {z} {matrix} {bp.part_id}.dat"
 
 
 # ---------------------------------------------------------------------------

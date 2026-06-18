@@ -15,12 +15,20 @@ import tempfile
 import numpy as np
 import pytest
 
-from brickomancer.models.brick import BRICK_PART_IDS, TILE_PART_IDS, BrickPlacement
+from brickomancer.models.brick import (
+    BRICK_PART_IDS,
+    BRICK_TYPES,
+    TILE_PART_IDS,
+    BrickPlacement,
+)
 from brickomancer.services.brick_packer import (
+    _bond_components_in_volume,
+    _bond_guards_ok,
     _collect_footprints,
+    _eliminate_arm_tip_articulations,
     _footprint,
     _has_connection,
-    _merge_components,
+    _is_arm_tip_brick,
     articulation_points,
     build_connectivity_graph,
     connected_component_count,
@@ -29,7 +37,7 @@ from brickomancer.services.brick_packer import (
     pack,
     unsupported_bricks,
 )
-from brickomancer.services.ldraw_writer import sequence_steps, write_ldr
+from brickomancer.services.ldraw_writer import _brick_line, sequence_steps, write_ldr
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -606,11 +614,18 @@ class TestArticulationPoints:
         assert connected_component_count(remaining) == 2
 
 
-class TestMergeComponents:
+class TestInVolumeBonding:
+    """Step 4: _bond_components_in_volume replaces the cap-above merge.
+
+    Same contracts as the old TestMergeComponents (1 component, 0 unsupported,
+    deterministic, non-adjacent stays separate) PLUS the new headline invariant:
+    bonds sit at existing layers, so NO brick is added above the input's top layer.
+    """
+
     def test_idempotent_on_merged(self):
-        """Re-running merge on an already-1-component build adds nothing."""
+        """Re-running the bonder on an already-1-component build adds nothing."""
         packed = pack(_solid_cube(5), color_id=15)
-        assert _merge_components(packed, 15) == packed
+        assert _bond_components_in_volume(packed, 15) == packed
 
     def test_single_layer_not_merged(self):
         """A flat single-layer build is left flat (no stacked caps)."""
@@ -618,7 +633,7 @@ class TestMergeComponents:
         assert all(bp.y == 0 for bp in result)
 
     def test_merges_adjacent_disconnected_columns(self):
-        """Three cardinally-adjacent 1x1 towers (no shared studs) merge to one.
+        """Three cardinally-adjacent 1x1 towers (no shared studs) bond to one.
 
         This is the fragment scenario: adjacent columns that never bond laterally.
         (Genuinely separated, non-adjacent towers correctly stay multi-component.)
@@ -629,7 +644,7 @@ class TestMergeComponents:
             _make_bp(2, 0, 0), _make_bp(2, 1, 0),
         ]
         assert connected_component_count(towers) == 3
-        merged = _merge_components(towers, 15)
+        merged = _bond_components_in_volume(towers, 15)
         assert connected_component_count(merged) == 1
         assert unsupported_bricks(merged) == []
 
@@ -639,28 +654,27 @@ class TestMergeComponents:
             _make_bp(0, 0, 0), _make_bp(0, 1, 0),
             _make_bp(4, 0, 4), _make_bp(4, 1, 4),
         ]
-        merged = _merge_components(far, 15)
+        merged = _bond_components_in_volume(far, 15)
         assert connected_component_count(merged) == 2
 
-    def test_merge_caps_are_supported(self):
-        """Every brick the merge ADDS (cap + extension) must itself be supported.
-
-        Guards the cap-placement invariant directly: extract the bricks above the
-        original top layer and assert none float (each grips >=1 stud below).
+    def test_bonds_add_no_height(self):
+        """CODIFYING DIFF (audit-wire-shape rule): the old cap-above merge asserted
+        ``any(bp.y > 1)`` -- that caps were stacked ABOVE the input. In-volume bonding
+        removes exactly those caps, so the new contract is the opposite: every bond
+        sits at an existing layer and NO brick is added above the input's top (y=1).
         """
         towers = [
             _make_bp(0, 0, 0), _make_bp(0, 1, 0),
             _make_bp(1, 0, 0), _make_bp(1, 1, 0),
             _make_bp(2, 0, 0), _make_bp(2, 1, 0),
         ]
-        merged = _merge_components(towers, 15)
-        # No brick anywhere is unsupported (caps included).
+        merged = _bond_components_in_volume(towers, 15)
+        assert connected_component_count(merged) == 1
         assert unsupported_bricks(merged) == []
-        # And the merge genuinely added bricks above the original top (y=1).
-        assert any(bp.y > 1 for bp in merged)
+        assert max(bp.y for bp in merged) == 1, "in-volume bonding must add no height"
 
     def test_merge_is_deterministic(self):
-        """Same multi-component input -> identical merge output (no dict-order flakiness)."""
+        """Same multi-component input -> identical bond output (no dict-order flakiness)."""
         towers = [
             _make_bp(0, 0, 0), _make_bp(0, 1, 0),
             _make_bp(1, 0, 0), _make_bp(1, 1, 0),
@@ -669,8 +683,8 @@ class TestMergeComponents:
         def _key(bp: BrickPlacement) -> tuple:
             return (bp.x, bp.y, bp.z, bp.width, bp.length, bp.part_id, bp.color_id)
 
-        a = sorted(_key(bp) for bp in _merge_components(towers, 15))
-        b = sorted(_key(bp) for bp in _merge_components(towers, 15))
+        a = sorted(_key(bp) for bp in _bond_components_in_volume(towers, 15))
+        b = sorted(_key(bp) for bp in _bond_components_in_volume(towers, 15))
         assert a == b
 
     def test_masonry_6x2x4_preserved_after_merge(self):
@@ -692,11 +706,12 @@ class TestMergeComponents:
             assert any(area > 1 for area in widths), f"layer {layer} is all 1x1"
 
     def test_masonry_abab_preserved_after_merge(self):
-        """The merge must NOT disturb the masonry ABAB seams (caps sit above).
+        """In-volume bonding must NOT disturb the masonry ABAB seams.
 
-        Explicit protection for the highest-risk salvaged invariant: a 6x4x4 grid
-        is multi-component, so _merge_components fires -- and its caps must land
-        above the tested layers (0-3), leaving the seam sets untouched.
+        The highest-risk salvaged invariant: a 6x4x4 grid is multi-component, so the
+        bonder fires -- and because every masonry bond is a z-direction (1,2) (width 1,
+        so x+width is unchanged), the seam sets stay byte-for-byte identical. No x-bond
+        ever fires on a solid grid (a z-bond is always available and preferred).
         """
         result = pack(np.ones((6, 4, 4), dtype=bool))
         assert connected_component_count(result) == 1
@@ -707,3 +722,358 @@ class TestMergeComponents:
         assert seam_set(0) == seam_set(2)
         assert seam_set(1) == seam_set(3)
         assert seam_set(0) != seam_set(1)
+        # Solid grids bond purely via seam-neutral z-bonds -- no (2,1) x-bond appears.
+        assert all((bp.width, bp.length) != (2, 1) for bp in result)
+
+
+# ---------------------------------------------------------------------------
+# Step 4: zero-added-height in-volume bonding (the headline invariant)
+# ---------------------------------------------------------------------------
+
+
+def _plus_star_thin() -> np.ndarray:
+    """A 7x3x7 plus-cross with longer (2-stud) arms -- a harder hub stress fixture."""
+    grid = np.zeros((7, 3, 7), dtype=bool)
+    grid[3, :, :] = True
+    grid[:, :, 3] = True
+    return grid
+
+
+def _max_y(placements: list[BrickPlacement]) -> int:
+    return max(bp.y for bp in placements)
+
+
+class TestStep4ZeroAddedHeight:
+    """In-volume bonding adds NO build-height layers above the input grid top.
+
+    This is the headline Step-4 invariant -- it replaces the cap-above merge's height
+    overshoot. The grid's top layer index is shape[1]-1; the packed output's max y must
+    equal it exactly, while staying 1 connected component with 0 unsupported bricks.
+    """
+
+    def test_cube_zero_added_height(self):
+        grid = _solid_cube(5)
+        result = pack(grid, color_id=15)
+        assert _max_y(result) == grid.shape[1] - 1 == 4
+        assert connected_component_count(result) == 1
+        assert unsupported_bricks(result) == []
+
+    def test_plus_star_zero_added_height(self):
+        """The done-when pathological fixture: the degree-4 hub bonds in-volume."""
+        grid = _plus_star()
+        result = pack(grid, color_id=14)
+        assert _max_y(result) == grid.shape[1] - 1 == 2
+        assert connected_component_count(result) == 1
+        assert unsupported_bricks(result) == []
+
+    def test_masonry_zero_added_height(self):
+        grid = np.ones((6, 4, 4), dtype=bool)
+        result = pack(grid)
+        assert _max_y(result) == grid.shape[1] - 1 == 3
+        assert connected_component_count(result) == 1
+        assert unsupported_bricks(result) == []
+
+    def test_three_adjacent_towers_bond_no_height(self):
+        """The fragment scenario bonds to 1 component at the input height (y=1)."""
+        towers = [
+            _make_bp(0, 0, 0), _make_bp(0, 1, 0),
+            _make_bp(1, 0, 0), _make_bp(1, 1, 0),
+            _make_bp(2, 0, 0), _make_bp(2, 1, 0),
+        ]
+        merged = _bond_components_in_volume(towers, 15)
+        assert connected_component_count(merged) == 1
+        assert _max_y(merged) == 1
+
+    def test_thin_star_one_component_zero_unsupported(self):
+        """The 7x3x7 thin star: a longer-armed hub exceeds the (1,4) z-extend reach,
+        so it may retain +1 height -- but it must still bond to ONE component with no
+        floating bricks (the structural guarantee holds even where height does not).
+        """
+        result = pack(_plus_star_thin(), color_id=15)
+        assert connected_component_count(result) == 1
+        assert unsupported_bricks(result) == []
+
+
+class TestStep4SolidGridRobustness:
+    """Sweep guards added after an adversarial review found regressions OFF the three
+    hand-picked fixtures. Across a broad range of solid grids the packer must ALWAYS
+    yield exactly 1 connected component with 0 unsupported bricks; and every THICK grid
+    (Y>=3 and Z>=3 -- the shape of a real voxelised object) must add no height.
+
+    DOCUMENTED LIMITATION: minimum-depth slabs (Z==2) and the Y==2, Z in {5,9} grids
+    saturate the bond-layer budget (the thin-grid analogue of the plus-star hub), so
+    they may keep +1/+2 height via the cap-above fallback -- but stay structurally
+    sound (1 component, 0 unsupported). Real ImageShaper output is far thicker.
+    """
+
+    def test_no_solid_grid_is_multicomponent_or_floats(self):
+        for X in range(2, 11):
+            for Y in range(2, 7):
+                for Z in range(2, 11):
+                    result = pack(np.ones((X, Y, Z), dtype=bool))
+                    assert connected_component_count(result) == 1, (X, Y, Z)
+                    assert unsupported_bricks(result) == [], (X, Y, Z)
+
+    def test_thick_solid_grids_add_no_height(self):
+        """Every Y>=3, Z>=3 solid grid bonds fully in-volume (zero added height)."""
+        for X in range(2, 11):
+            for Y in range(3, 7):
+                for Z in range(3, 11):
+                    result = pack(np.ones((X, Y, Z), dtype=bool))
+                    assert _max_y(result) == Y - 1, (X, Y, Z)
+
+    def test_thin_slabs_stay_structurally_sound(self):
+        """The documented-limitation thin slabs are still 1 component + 0 unsupported
+        (height may exceed the input top -- buildable, just not height-optimal).
+        """
+        for shape in ((6, 2, 2), (3, 2, 2), (6, 2, 5), (7, 2, 9)):
+            result = pack(np.ones(shape, dtype=bool))
+            assert connected_component_count(result) == 1, shape
+            assert unsupported_bricks(result) == [], shape
+
+    def test_tile_split_does_not_sever_bonds(self):
+        """Regression (adversarial review BLOCKER): a top-layer wide brick with no exact
+        tile (e.g. a (2,3) on a (7,2,3) grid) was split into strip tiles, severing the
+        bond and leaving 4 components. Tiles now replace 1-for-1 only, so the build
+        stays connected at the input height.
+        """
+        result = pack(np.ones((7, 2, 3), dtype=bool))
+        assert connected_component_count(result) == 1
+        assert unsupported_bricks(result) == []
+        assert _max_y(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# Step 4: the bond-only (2,1) part + its 90-deg writer rotation
+# ---------------------------------------------------------------------------
+
+
+class TestStep4BondPart:
+    def test_2x1_maps_to_3004(self):
+        """(2,1) is the SAME physical part as (1,2): LDraw 3004 (BOM aggregates them)."""
+        assert BRICK_PART_IDS[(2, 1)] == "3004"
+        assert BRICK_PART_IDS[(1, 2)] == "3004"
+
+    def test_2x1_is_bond_only(self):
+        """(2,1) must NOT be in BRICK_TYPES -- the greedy fill never emits it."""
+        assert (2, 1) not in BRICK_TYPES
+        assert (2, 1) in BRICK_PART_IDS
+
+    def test_2x1_emits_rotated_matrix(self):
+        """The (2,1) bond renders as part 3004 rotated 90 deg about Y (studs along X).
+
+        Render-sensitive (only an LDView render proves the brick lands correctly), so
+        this pins the exact matrix + centroid the operator UAT will visually confirm.
+        """
+        bp = _make_bp(1, 2, 3, 2, 1)  # x=1,y=2,z=3, width=2,length=1
+        line = _brick_line(bp)
+        # x = 1*20 + (2-1)*10 = 30 ; y = 2*-24 = -48 ; z = 3*20 + (1-1)*10 = 60
+        assert line == "1 15 30 -48 60 0 0 1 0 1 0 -1 0 0 3004.dat"
+
+    def test_1x2_keeps_identity_matrix(self):
+        """The Z-spanning (1,2) is part 3004's native orientation -> identity matrix."""
+        bp = _make_bp(1, 2, 3, 1, 2)
+        line = _brick_line(bp)
+        # x = 1*20 = 20 ; z = 3*20 + (2-1)*10 = 70
+        assert line == "1 15 20 -48 70 1 0 0 0 1 0 0 0 1 3004.dat"
+
+    def test_bom_aggregates_1x2_and_2x1_as_one_3004(self):
+        """BOM groups by part_id, so a (1,2) + a (2,1) form ONE 3004 line of qty 2."""
+        from brickomancer.services.suggestion_service import _build_parts_list
+
+        placements = [_make_bp(0, 0, 0, 1, 2), _make_bp(2, 0, 0, 2, 1)]
+        parts = _build_parts_list(placements)
+        threes = [pc for pc in parts if pc.part_id == "3004"]
+        assert len(threes) == 1
+        assert threes[0].qty == 2
+
+    def test_top_surface_2x1_stays_a_brick(self):
+        """A top-surface (2,1) has no tile mapping; tiling would split it into 1x1
+        tiles and sever the x-bond, so it must stay a brick. (The plus-star packs a
+        (2,1) at its top layer, so this path is live in production.)
+        """
+        from brickomancer.services.brick_packer import _apply_surface_tiles
+
+        result = _apply_surface_tiles([_make_bp(0, 0, 0, 2, 1)])
+        assert len(result) == 1
+        assert (result[0].width, result[0].length) == (2, 1)
+        assert result[0].part_id == "3004"
+
+    def test_2x1_matrix_is_a_proper_rotation(self):
+        """The (2,1) matrix must be a PROPER rotation (det=+1, orthonormal), not a
+        sign-flipped reflection. A bare string-equality check would pass a reflection
+        like `0 0 1 0 1 0 1 0 0` (det=-1) that renders the brick mirrored; this guards
+        the one render property verifiable without LDView.
+        """
+        bp = _make_bp(0, 0, 0, 2, 1)
+        nums = _brick_line(bp).split()[5:14]
+        m = np.array([float(v) for v in nums]).reshape(3, 3)
+        assert np.isclose(np.linalg.det(m), 1.0)              # proper rotation
+        assert np.allclose(m @ m.T, np.eye(3))                # orthonormal (no scale/shear)
+        assert np.allclose(m @ np.array([0, 0, 10]), [10, 0, 0])  # part-Z -> model-X
+        assert np.allclose(m @ np.array([0, 1, 0]), [0, 1, 0])    # Y (up) preserved
+
+    def test_packed_star_2x1_round_trips_through_writer(self):
+        """Producer->consumer: a packed plus-star's (2,1) bonds must emit well-formed,
+        rotated 15-field LDraw lines (not just exist as placements). The cube alone has
+        no (2,1), so the existing round-trip test never exercised this path.
+        """
+        placements = pack(_plus_star(), color_id=14)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "star.ldr")
+            write_ldr(placements, path)
+            lines = open(path, encoding="utf-8").read().splitlines()
+        rotated = [ln for ln in lines if ln.startswith("1 ") and "0 0 1 0 1 0 -1 0 0" in ln]
+        assert rotated, "packed star must emit at least one rotated (2,1) bond line"
+        for ln in rotated:
+            fields = ln.split()
+            assert len(fields) == 15
+            assert fields[14] == "3004.dat"
+
+
+# ---------------------------------------------------------------------------
+# Step 4: seam behaviour (z-bonds seam-neutral, x-bonds gated + only where needed)
+# ---------------------------------------------------------------------------
+
+
+class TestStep4SeamBehaviour:
+    def test_z_bond_is_seam_neutral(self):
+        """Bonding z-adjacent towers preserves the per-layer seam set exactly."""
+        towers = [
+            _make_bp(0, 0, 0), _make_bp(0, 1, 0),
+            _make_bp(0, 0, 1), _make_bp(0, 1, 1),
+            _make_bp(0, 0, 2), _make_bp(0, 1, 2),
+        ]
+
+        def seam_set(plc, layer):
+            return frozenset(bp.x + bp.width for bp in plc if bp.y == layer)
+
+        before = {y: seam_set(towers, y) for y in (0, 1)}
+        merged = _bond_components_in_volume(towers, 15)
+        after = {y: seam_set(merged, y) for y in (0, 1)}
+        assert before == after == {0: frozenset({1}), 1: frozenset({1})}
+        assert all((bp.width, bp.length) != (2, 1) for bp in merged)
+
+    def test_x_bond_fires_on_star_arm(self):
+        """The star x-arm has no z-neighbour, so it MUST use (2,1) x-bonds."""
+        result = pack(_plus_star(), color_id=14)
+        assert any((bp.width, bp.length) == (2, 1) for bp in result)
+
+    def test_masonry_never_uses_x_bonds(self):
+        """x-bonds rank below ALL z strategies, so on masonry grids -- where a z-bond
+        is always available -- they never fire. This z-PREFERENCE (not a separate
+        seam-gate) is what keeps the masonry ABAB seams intact, verified across the
+        salvaged masonry sizes.
+        """
+        for shape in ((6, 4, 4), (6, 2, 4), (8, 2, 4)):
+            result = pack(np.ones(shape, dtype=bool))
+            assert all((bp.width, bp.length) != (2, 1) for bp in result), shape
+
+
+# ---------------------------------------------------------------------------
+# Step 4: physics rollback guard
+# ---------------------------------------------------------------------------
+
+
+class TestStep4PhysicsGuard:
+    def test_guard_accepts_valid_merge(self):
+        before = [_make_bp(0, 0, 0), _make_bp(0, 1, 0), _make_bp(1, 0, 0), _make_bp(1, 1, 0)]
+        # bond the two adjacent towers at layer 0 with a (2,1)
+        after = [_make_bp(0, 1, 0), _make_bp(1, 1, 0), _make_bp(0, 0, 0, 2, 1)]
+        assert _bond_guards_ok(before, after, require_merge=True)
+
+    def test_guard_rejects_unsupported(self):
+        """A candidate that leaves a brick floating is rolled back."""
+        before = [_make_bp(0, 0, 0)]
+        after = [_make_bp(0, 0, 0), _make_bp(3, 1, 3)]  # (3,1,3) floats
+        assert not _bond_guards_ok(before, after, require_merge=True)
+
+    def test_guard_rejects_added_height(self):
+        """A candidate that stacks above the input top is rolled back (in-volume only)."""
+        before = [_make_bp(0, 0, 0), _make_bp(0, 1, 0)]
+        after = before + [_make_bp(0, 2, 0)]
+        assert not _bond_guards_ok(before, after, require_merge=True)
+
+    def test_guard_rejects_non_merging_primary_bond(self):
+        """A PRIMARY bond that does not strictly reduce components is rejected --
+        this is what stops a hub decompose from merging one pair while re-splitting
+        another at net-zero (the bug that left the plus-star a layer too tall).
+        """
+        before = [_make_bp(0, 0, 0), _make_bp(0, 1, 0)]  # 1 component already
+        after = list(before)  # no change -> no merge
+        assert not _bond_guards_ok(before, after, require_merge=True)
+        assert _bond_guards_ok(before, after, require_merge=False)  # ok for redundancy
+
+
+# ---------------------------------------------------------------------------
+# Step 4: de-articulation (Phase C) + arm-tip detection
+# ---------------------------------------------------------------------------
+
+
+class TestStep4DeArticulation:
+    def test_redundant_z_bond_reduces_cut_vertices(self):
+        """Two z-adjacent 3-high towers bonded by one z-bond have a cut-vertex bond;
+        Phase C adds a redundant z-bond (cycle) that strictly reduces cut vertices.
+        """
+        base = [
+            _make_bp(0, 0, 0), _make_bp(0, 1, 0), _make_bp(0, 2, 0),
+            _make_bp(0, 0, 1), _make_bp(0, 1, 1), _make_bp(0, 2, 1),
+        ]
+        bonded = _bond_components_in_volume(base, 15)
+        before = len(articulation_points(bonded))
+        hardened = _eliminate_arm_tip_articulations(bonded, 15)
+        assert len(articulation_points(hardened)) < before
+        assert connected_component_count(hardened) == 1
+        assert _max_y(hardened) == 2          # no added height
+        assert unsupported_bricks(hardened) == []
+
+    def test_dearticulation_is_masonry_safe(self):
+        """Phase C is z-only, so it never adds a (2,1) or disturbs masonry seams."""
+        result = pack(np.ones((6, 4, 4), dtype=bool))  # pack() includes Phase C
+
+        def seam_set(layer):
+            return frozenset(bp.x + bp.width for bp in result if bp.y == layer)
+
+        assert seam_set(0) == seam_set(2)
+        assert seam_set(1) == seam_set(3)
+        assert all((bp.width, bp.length) != (2, 1) for bp in result)
+
+    def test_dearticulation_never_worsens(self):
+        """On an already-bonded build the pass never adds height, floats a brick, or
+        increases the component count (its acceptance criterion is strict reduction).
+        """
+        bonded = pack(_solid_cube(5))
+        before_art = len(articulation_points(bonded))
+        before_y = _max_y(bonded)
+        out = _eliminate_arm_tip_articulations(bonded, 15)
+        assert len(articulation_points(out)) <= before_art
+        assert _max_y(out) == before_y
+        assert connected_component_count(out) == 1
+        assert unsupported_bricks(out) == []
+
+
+class TestStep4ArmTip:
+    def test_is_arm_tip_brick_true_at_tip(self):
+        grid = _plus_star()
+        tip = _make_bp(0, 0, 2)  # west arm tip column
+        assert _is_arm_tip_brick(tip, grid)
+
+    def test_is_arm_tip_brick_false_at_hub(self):
+        grid = _plus_star()
+        hub = _make_bp(2, 0, 2)  # cross centre: 4 occupied neighbours
+        assert not _is_arm_tip_brick(hub, grid)
+
+    def test_star_no_freestanding_towers(self):
+        """The achievable reading of "zero arm-tip cut vertices": after bonding there
+        are NO freestanding 1x1 stacks -- every arm tip is part of the single bonded
+        assembly (1 component). Internal cut vertices on literal 1-wide arms and the
+        saturated hub are geometrically irreducible and intentionally NOT asserted away.
+        """
+        result = pack(_plus_star(), color_id=14)
+        assert connected_component_count(result) == 1
+        # every arm-tip column is represented in the (single) assembly
+        tip_cols = {(0, 2), (4, 2), (2, 0), (2, 4)}
+        covered = {(bp.x + dx, bp.z + dz)
+                   for bp in result
+                   for dx in range(bp.width) for dz in range(bp.length)}
+        assert tip_cols <= covered

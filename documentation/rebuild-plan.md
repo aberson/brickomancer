@@ -199,12 +199,20 @@ spike shows TripoSG installs cleanly and renders better.
   1×1 stacks and zero articulation points at arm tips; a regression test asserts no cut vertices;
   **the packed output adds no build-height layers beyond the input grid's top (in-volume bonding —
   no above-grid connectivity caps), while keeping 1 connected component + 0 unsupported.**
-- **Status:** NOT STARTED — build-ready design spec at
+- **Status:** DONE (2026-06-18). In-volume bonding (`_bond_components_in_volume`) replaces the
+  cap-above merge: cube, plus-star, and all masonry grids pack to ZERO added height, 1 component,
+  0 unsupported, masonry ABAB seams preserved. New bond-only `(2,1)` part (LDraw 3004 rotated 90°
+  about Y, matrix `0 0 1 0 1 0 -1 0 0`) — **render-verified** (renders ⊥ to the (1,2);
+  `scripts/step4_render_uat.py`). Spanning-tree bond solver with strategy ranking (z-clean →
+  z-extend → x-clean → z/x-decompose), each guarded (strict-merge, no float, no added height;
+  x-bonds seam-gated). The plus-star degree-4 hub is solved via a z-extend that grows an existing
+  `(1,N)` span to absorb a fragment without consuming a layer. Phase C (`_eliminate_arm_tip_articulations`)
+  adds redundant z-bonds (cycles) to reduce cut vertices where geometry allows. Tile pass made
+  1-for-1 (an adversarial review found the old strip-split severed top-layer bonds → multi-component).
+  240 tests, 0 type errors, 0 lint. **Known limitation:** minimum-depth slabs (Z=2) and Y=2,Z∈{5,9}
+  keep +1/+2 height via the cap fallback (still 1 component + 0 unsupported); all thick grids
+  (Y≥3 ∧ Z≥3) are zero-height. CP-SAT/Phase D not needed (skipped per spec). See
   [`docs/investigations/rebuild/06-step4-design.md`](../docs/investigations/rebuild/06-step4-design.md).
-  Deferred to a fresh session (2026-06-17): zero-height requires a `(2,1)` part + an `ldraw_writer`
-  90° rotation matrix, which is render-sensitive (needs an operator LDView UAT). A z-only in-volume
-  attempt was measured (cube +1, star +3 — x-adjacent bonds dominate) and reverted; do the full
-  `(2,1)`-inclusive plan per the spec.
 - **Depends on:** Step 3
 
 ---

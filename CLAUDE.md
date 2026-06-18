@@ -86,7 +86,7 @@ distillation: [`docs/investigations/rebuild/`](docs/investigations/rebuild/). Gi
 step issues #47-#59 (namespaced "Rebuild —"). The old v1 harness was REMOVED in Phase 1 (rebuilt
 fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
 
-**Progress (HEAD `a88160b`, pushed): Phase 0 + Phase 1 + Phase 2 Step 3 DONE.** 210 tests passing,
+**Progress: Phase 0 + Phase 1 + Phase 2 Steps 3 & 4 DONE.** 240 tests passing,
 0 type errors, 0 lint violations.
 - **Phase 0:** Hunyuan3D-2mini chosen for image→3D (TripoSG install-blocked on Windows). **Toolchain
   finding: `INSERT COVER_PAGE` crashes LPub3D 2.4.9 → the frozen instruction header is BOM-only**
@@ -97,15 +97,23 @@ fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
   (`services/shaper.py`, `to_voxels() -> (X,Y,Z) bool grid`) is the swap point everything downstream
   builds against; grid-dim constants live in `models/brick.py`.
 - **Phase 2 Step 3:** connectivity-graph packer (`build_connectivity_graph`,
-  `connected_component_count`, `unsupported_bricks`, `articulation_points`, `_merge_components`).
+  `connected_component_count`, `unsupported_bricks`, `articulation_points`).
   cube/star → 1 connected component + 0 unsupported; masonry seams preserved.
+- **Phase 2 Step 4 (#53):** **in-volume bonding replaces the cap-above merge → ZERO added height**
+  for the cube, plus-star, and all masonry grids (was cube +1 / star +4). New bond-only `(2,1)` part
+  (LDraw 3004 rotated 90° about Y; matrix `0 0 1 0 1 0 -1 0 0` — **render-verified** via
+  `scripts/step4_render_uat.py`, the (2,1) renders ⊥ to the (1,2)). The bonder
+  (`_bond_components_in_volume`) is a spanning-tree solver: z-clean → z-extend (grow a `(1,N)` span to
+  absorb a z-fragment) → x-clean → z/x-decompose, each guarded (strict-merge, no float, no added
+  height; x-bonds seam-gated). A degree-4 hub (plus-star centre) is solved by z-extend reusing a
+  layer. Phase C (`_eliminate_arm_tip_articulations`, z-only) hardens single-bond fragments into
+  cycles. Tile pass is now **1-for-1 only** (splitting a wide top brick severed bonds — adversarial
+  review BLOCKER). Known limitation: minimum-depth slabs (Z=2) and Y=2,Z∈{5,9} keep +1/+2 height via
+  the cap fallback (still 1 component, 0 unsupported); all thick grids (Y≥3 ∧ Z≥3) are zero-height.
 
-**Next action: Phase 2 Step 4 (#53)** — in-volume bonding (replace the cap-above merge so connectivity
-adds no build height) + split/re-merge + physics rollback. Build-ready spec at
-[`docs/investigations/rebuild/06-step4-design.md`](docs/investigations/rebuild/06-step4-design.md).
-Deferred to a fresh session because zero-added-height needs a `(2,1)` part + an `ldraw_writer` 90°
-rotation matrix that is render-sensitive (needs an operator LDView render UAT). A z-only attempt was
-measured (cube +1, star +3) and reverted — see the spec.
+**Next action: Phase 3 Step 5 (#54)** — `ImageShaper` (rembg → Hunyuan3D-2mini → voxelize → `(X,Y,Z)`
+grid) behind the `Shaper` seam, wired through the `/api/generate/from-image` route (integration test
+required per code-quality rule). The packer now consumes whatever grid the Shaper emits.
 
 **`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as a Windows user environment variable (not `.env`). Load in
 PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`.

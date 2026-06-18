@@ -22,6 +22,13 @@ MAX_GRID_DIM: int = 32     # max X/Z footprint for V1 shapes
 MAX_GRID_HEIGHT: int = 64  # max Y (layers) — sanity cap, not a hard design limit
 
 # Mapping from (width, length) to LDraw part ID
+#
+# (2, 1) is the logical X-spanning 1x2 -- the SAME physical LDraw part 3004 as the
+# Z-spanning (1, 2), just rotated 90 deg about Y (the writer emits the rotation
+# matrix; see ldraw_writer._brick_line). It is BOND-ONLY: the connectivity packer
+# constructs it to bond x-adjacent fragment towers in-volume, and it is deliberately
+# kept OUT of BRICK_TYPES so the greedy fill never emits it. BOM grouping is by
+# part_id, so 3004 reuse aggregates (1,2) and (2,1) together automatically.
 BRICK_PART_IDS: dict[tuple[int, int], str] = {
     (2, 4): "3001",
     (2, 3): "3002",
@@ -29,6 +36,7 @@ BRICK_PART_IDS: dict[tuple[int, int], str] = {
     (1, 4): "3010",
     (1, 3): "3622",
     (1, 2): "3004",
+    (2, 1): "3004",  # bond-only X-spanning 1x2 (rotated 3004)
     (1, 1): "3005",
 }
 
