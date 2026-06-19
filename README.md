@@ -12,8 +12,8 @@ Local-first personal tool. Python/FastAPI backend + React frontend. Clean REST A
 |---|---|
 | Backend | Python 3.12, FastAPI, uv |
 | Frontend | React 18 + Vite (port 5173) |
-| Image → voxels | rembg (background removal) + 2D silhouette extrusion |
-| Voxelization | trimesh (text path) |
+| Image → 3D → voxels | rembg (background removal) + Hunyuan3D-2mini (CUDA GPU) + trimesh voxelization |
+| Voxelization | trimesh (`voxelized(method="subdivide").fill()`) |
 | Text → shape | Llama 3.2-1B via llama-server (llama.cpp, port 8080) |
 | Piece detection | Claude claude-sonnet-4-6 via `CLAUDE_CODE_OAUTH_TOKEN` subprocess |
 | Color matching | scikit-learn + scikit-image + basic-colormath (ΔE2000) |
@@ -28,7 +28,8 @@ Local-first personal tool. Python/FastAPI backend + React frontend. Clean REST A
 - `llama-server` running with Llama 3.2-1B GGUF on port 8080 (text path only)
 - `LDView` on PATH (`LDView --version` or `ldview --version` works)
 - `LPub3D` on PATH (`lpub3d -?` works)
-- `CLAUDE_CODE_OAUTH_TOKEN` set in `.env` (copy from `.env.example`)
+- **Image path:** a CUDA GPU + Hunyuan3D-2mini installed in the project venv. `POST /api/generate/from-image` returns a clean 503 if torch/CUDA/`hy3dgen`/weights are unavailable. (Currently installed only in the throwaway spike venv `C:\Tools\spike3d`.)
+- `CLAUDE_CODE_OAUTH_TOKEN` set as a **Windows user environment variable** (not `.env`); load in PowerShell via `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`
 
 ## Setup
 
@@ -41,8 +42,9 @@ uv run python scripts/download_data.py   # downloads ~50 MB of Rebrickable CSVs 
 ## Run
 
 ```powershell
-# Terminal 1 — backend
-uv run fastapi dev src/brickomancer/main.py     # http://localhost:8000
+# Terminal 1 — backend (fastapi dev fails on cp1252 Windows terminals; use uvicorn)
+$env:PATH += ";C:\Tools\LPub3D"                              # before starting the server
+uv run uvicorn --app-dir src brickomancer.main:app           # http://localhost:8000 (no --reload)
 
 # Terminal 2 — frontend
 cd frontend; npm run dev                         # http://localhost:5173
@@ -69,10 +71,10 @@ npm run build --prefix frontend
 ```
 Photo/text input
   ↓
-Image path: rembg (background removal) → 2D silhouette extrusion → voxel grid
-Text path:  llama-server → primitive mesh → trimesh voxelization
+Image path: rembg (background removal) → Hunyuan3D-2mini → trimesh voxelization → (X,Y,Z) voxel grid (ImageShaper)
+Text path:  TextShaper (Step 6, not yet built — /from-text returns 503) → (X,Y,Z) voxel grid
   ↓
-Brick packing (greedy + masonry offset + interlocking check)
+Connectivity-graph brick packing (components + grounding + zero-added-height in-volume bonding)
   ↓
 3 LDraw files (compact / standard / detailed)
   ↓
@@ -83,11 +85,11 @@ User selects suggestion → LPub3D generates instruction PDF
 
 ## Key design decisions
 
-- **Ephemeral sessions, no database.** All state lives in a per-request `tmp/<uuid>/` directory, deleted after the response. Adding job history later requires only a data-service layer.
+- **Ephemeral sessions, no database.** All state lives in a per-request `tmp/<uuid>/` directory. V1 keeps it (no cleanup) so the LDraw file survives the follow-up `/instructions` call; adding job history later requires only a data-service layer.
 - **LDraw + LPub3D for instructions.** LPub3D headless produces publication-quality step illustrations; replicating this with ReportLab would take weeks.
 - **CLAUDE_CODE_OAUTH_TOKEN subprocess for piece detection.** No API key billing on the existing subscription. The detector is behind `subprocess_utils.run_claude_subprocess()`; swapping to a local LLaVA model requires changing one function.
-- **Greedy packing with masonry offset.** Tractable in milliseconds for up to ~5000 bricks. OR-Tools CP-SAT per-layer ILP is the V2 upgrade path.
-- **2D silhouette extrusion over TripoSR.** rembg alpha-channel mask → stud-grid resize → vertical extrusion gives the correct subject silhouette shape for cartoon/clip-art inputs. TripoSR reconstructed these as rectangular blobs regardless of subject shape.
+- **Connectivity-graph packing.** Replaces v1's greedy + masonry + bolt-on-repair: a connectivity graph makes structural weakness (disconnected components, articulation points) visible, and in-volume bonding adds interlocks with zero added height. (Phase 2, Steps 3–4.)
+- **Hunyuan3D-2mini for true image→3D.** The v1 2D silhouette+dome heuristic fabricated depth (a star became a domed slab, losing its points); the rebuild voxelizes a real single-image→3D mesh behind the `Shaper` seam. TripoSG was install-blocked on Windows, so Hunyuan3D-2mini (shape-only, no CUDA texture extensions) was chosen in Phase 0.
 
 ## Project structure
 
@@ -95,9 +97,10 @@ User selects suggestion → LPub3D generates instruction PDF
 src/brickomancer/
   main.py               FastAPI app, CORS, startup data load
   routers/              generate.py, info.py
-  services/             color_service, data_service, image_pipeline,
-                        text_pipeline, brick_packer, ldraw_writer,
+  services/             color_service, data_service, shaper (seam),
+                        image_shaper, brick_packer, ldraw_writer,
                         piece_detector, suggestion_service, instruction_service
+                        (text_shaper lands in Step 6)
   models/               schemas.py (Pydantic), brick.py (dataclasses)
   utils/                temp_dir.py, subprocess_utils.py
 frontend/src/
@@ -116,4 +119,11 @@ scripts/
 
 ## Status
 
-**Harness refactored — judge+applier architecture, 340 tests passing** — Harness `run_harness.py` (~1019 lines) split into focused submodules: `pipeline.py`, `advisor.py`, `server.py`, `judge.py`, `applier.py`. Stochastic hill-climbing `developer_agent` replaced with a judge+applier loop: `judge.py` reads all 9 advisor reports and produces a structured change brief `{dimension, file_path, rationale, approach_description, functions_to_modify, constraints_to_preserve, anti_patterns_to_avoid, blocking_issues, confidence}`; `applier.py` executes the brief via Claude subprocess, runs pytest, commits or reverts. `warnings_judge` added as 9th advisor (score 10=healthy, 0=crisis) — reads `scores_history` (last 15 rows) to detect oscillation, revert storms, regression, stagnation; judge weighs its findings before choosing a dimension. `scores.jsonl` gains `judge_rationale` and `judge_blocking` fields. 340 tests passing, 0 type errors, 0 lint violations.
+**Full rebuild in progress — Phase 3 Step 5 done, 253 tests passing.** The v1 silhouette+dome image path (which fabricated depth) and the pytest-only quality harness were removed; the project is being rebuilt around a `Shaper` seam (`services/shaper.py`, `to_voxels() -> (X, Y, Z)` bool grid) feeding a connectivity-graph brick packer. Done so far:
+
+- **Phase 0** — Hunyuan3D-2mini chosen for image→3D (TripoSG install-blocked on Windows); the LPub3D instruction header is BOM-only because `INSERT COVER_PAGE` crashes LPub3D 2.4.9.
+- **Phase 1** — in-place clean + the `Shaper` seam; the image/text generate routes were 503-stubbed pending the Shapers.
+- **Phase 2 Steps 3–4** — connectivity-graph packer (component/unsupported/articulation analysis) + zero-added-height in-volume bonding.
+- **Phase 3 Step 5** — `ImageShaper`: rembg → Hunyuan3D-2mini → trimesh voxelize, wired through `POST /api/generate/from-image`; returns 503 when the model/GPU/weights are unavailable. `height_studs` is the resolution knob.
+
+Next: Step 6 `TextShaper`, then the rebuilt re-render+re-score harness (Steps 9–10). 253 tests passing, 0 type errors, 0 lint violations. See [`documentation/rebuild-plan.md`](documentation/rebuild-plan.md).

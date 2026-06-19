@@ -233,6 +233,17 @@ spike shows TripoSG installs cleanly and renders better.
 - **Done when:** `from-image` on the star fixture returns a voxel grid whose top-down silhouette
   has ≥4 distinct protrusions (star points survive); model-unavailable raises a clean 503.
 - **Depends on:** Steps 0.1, 2, 3
+- **Status:** DONE — automated scope (2026-06-19). `ImageShaper` (`services/image_shaper.py`)
+  implements the seam: rembg → Hunyuan3D-2mini → `trimesh.voxelized(method="subdivide").fill()` →
+  crop/clamp/pad into the contract → `validate_grid`. Wired through `/api/generate/from-image`;
+  `ModelUnavailableError` (no torch / no CUDA / no `hy3dgen` / weights-load fail / degenerate mesh)
+  → clean 503. `height_studs` is now the resolution knob (`ImageShaper(max_dim=...)`, clamped to
+  `[2, 32]`) — the spike's `max_dim=28` packs ~66 s/tier (×3 tiers = unusable); `max_dim≈10` packs
+  in <2 s. Integration test runs the model **mocked** through the router (`_generate_mesh` patched)
+  plus a model-unavailable 503 test; 253 tests green, 0 type, 0 lint. Packer + `Shaper.to_voxels`
+  signature untouched. **DEFERRED to an operator Test:** the literal done-when above (live
+  star-survival, top-down ≥4 protrusions with the real model) — Hunyuan3D-2mini is not yet in the
+  project venv (only the throwaway `C:\Tools\spike3d`); needs the 7.64 GB weight download first.
 
 ### Step 6: Text `Shaper` — sparse-voxel emitter
 - **Problem:** Implement `TextShaper`: Claude CLI emits a **sparse 20³ voxel occupancy** (list of

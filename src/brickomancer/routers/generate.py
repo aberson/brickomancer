@@ -6,24 +6,25 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
+from brickomancer.models.brick import MAX_GRID_DIM, MIN_GRID_DIM
 from brickomancer.models.schemas import (
     GenerateResponse,
     GenerateTextRequest,
     InstructionsRequest,
 )
+from brickomancer.services import color_service, piece_detector, suggestion_service
+from brickomancer.services.image_shaper import ImageShaper, ModelUnavailableError
 from brickomancer.services.instruction_service import ToolUnavailableError, generate_pdf
 from brickomancer.utils.temp_dir import TMP_DIR
 
 router = APIRouter()
 
-# Phase 1 Step 1: the v1 shape pipelines were removed. The image path (silhouette+dome
-# image_pipeline) is replaced by the 3D-model ImageShaper in Step 5; the text path
-# (Llama text_pipeline) by the TextShaper in Step 6. Both routes return 503 until the
-# Shaper seam (Step 2) and its implementations land. The route signatures are preserved
-# so the frontend contract and FastAPI request validation are unchanged.
+# Phase 1 Step 1: the v1 shape pipelines were removed. The text path (Llama
+# text_pipeline) is replaced by the TextShaper in Step 6, so /from-text returns 503
+# until then. The image path was rebuilt in Step 5 (3D-model ImageShaper, below).
 _SHAPER_PENDING = (
-    "Shape generation is being rebuilt: the image/text Shaper seam and its "
-    "implementations land in Phase 3 (Steps 5-6). This route returns 503 until then."
+    "Shape generation is being rebuilt: the text Shaper seam and its "
+    "implementation land in Phase 3 (Step 6). This route returns 503 until then."
 )
 
 
@@ -35,12 +36,53 @@ async def generate_from_image(
 ) -> GenerateResponse:
     """Generate LEGO suggestions from an uploaded image.
 
-    Temporarily stubbed (Phase 1 Step 1): the v1 silhouette+dome ``image_pipeline``
-    was removed. The 3D-model ``ImageShaper`` lands in Step 5. The ``image`` parameter
-    is kept required so FastAPI still returns 422 for a missing body; a present body
-    returns 503 until the Shaper seam is wired.
+    Phase 3 Step 5: the upload is saved, run through the 3D-model ``ImageShaper``
+    (rembg -> Hunyuan3D -> voxelize), colored from the same image, and packed into
+    the three suggestion tiers. Returns 503 (not 500) when the model/GPU/weights are
+    unavailable, so the rest of the local-first tool stays usable.
     """
-    raise HTTPException(status_code=503, detail=_SHAPER_PENDING)
+    request_id = str(uuid.uuid4())
+    tmp_path = TMP_DIR / request_id
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    # Write the uploaded image to disk. Use .name to strip any directory components
+    # from the user-supplied filename and prevent path traversal.
+    safe_name = Path(image.filename or "input.jpg").name or "input.jpg"
+    image_path = tmp_path / safe_name
+    image_path.write_bytes(await image.read())
+
+    # Write any piece images to disk for optional detection.
+    piece_paths: list[str] = []
+    for i, piece_file in enumerate(piece_images):
+        safe_piece_name = Path(piece_file.filename or "piece.jpg").name or "piece.jpg"
+        piece_path = tmp_path / f"piece_{i}_{safe_piece_name}"
+        piece_path.write_bytes(await piece_file.read())
+        piece_paths.append(str(piece_path))
+
+    # Shape: image -> 3D model -> voxels. A missing GPU/install/weights is a 503.
+    # height_studs is the user's resolution knob: the mesh's longest extent maps to
+    # this many voxels. Clamped into the packer's footprint contract so any client
+    # value is safe (28-ish is fine for star quality but packs too slowly per tier).
+    resolution = max(MIN_GRID_DIM, min(MAX_GRID_DIM, height_studs))
+    try:
+        grid = ImageShaper(str(image_path), max_dim=resolution).to_voxels()
+    except ModelUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    # Color is extracted separately from the same image (the seam is geometry-only).
+    colors = color_service.extract_colors(str(image_path))
+
+    # Detect pieces (optional soft constraint; empty/None when no piece images).
+    piece_inventory = piece_detector.detect_pieces(piece_paths) if piece_paths else None
+
+    try:
+        suggestions = suggestion_service.generate_suggestions(
+            grid, colors, tmp_path, request_id, piece_inventory
+        )
+    except RuntimeError as exc:  # e.g. LDView not on PATH (run_ldview)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return GenerateResponse(suggestions=suggestions)
 
 
 @router.post("/api/generate/from-text")

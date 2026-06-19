@@ -77,19 +77,9 @@ def test_generate_from_image_missing_body_returns_422(client: TestClient) -> Non
     assert response.status_code == 422
 
 
-def test_generate_from_image_stub_returns_503(client: TestClient) -> None:
-    """POST /api/generate/from-image with a valid body returns the Phase-1 503 stub.
-
-    The v1 image_pipeline was removed in Phase 1 Step 1; the ImageShaper lands in
-    Step 5. Until then a well-formed request returns 503 (not a crash / 500).
-    """
-    response = client.post(
-        "/api/generate/from-image",
-        data={"height_studs": "8"},
-        files={"image": ("cake.jpg", b"fake", "image/jpeg")},
-    )
-    assert response.status_code == 503
-    assert "Shaper" in response.json()["detail"]
+# NOTE: the from-image route is no longer a 503 stub as of Phase 3 Step 5 -- it is
+# wired through ImageShaper. Its end-to-end behavior (mocked-model success, multi-file
+# form, model-unavailable 503) is covered in tests/test_generate_from_image_route.py.
 
 
 def test_generate_from_text_stub_returns_503(client: TestClient) -> None:
@@ -115,27 +105,6 @@ def test_generate_from_text_missing_description_returns_422(client: TestClient) 
     """
     response = client.post("/api/generate/from-text", json={})
     assert response.status_code == 422
-
-
-def test_generate_from_image_stub_with_piece_images_returns_503(
-    client: TestClient,
-) -> None:
-    """The stub preserves the multi-file signature: image + piece_images still 503s.
-
-    Confirms the optional ``piece_images`` parameter is kept on the route so the
-    documented multi-file form parses correctly and reaches the 503 stub (not a
-    422 form-parse error).
-    """
-    response = client.post(
-        "/api/generate/from-image",
-        data={"height_studs": "8"},
-        files=[
-            ("image", ("cake.jpg", b"fake", "image/jpeg")),
-            ("piece_images", ("piece1.jpg", b"fakepiece", "image/jpeg")),
-        ],
-    )
-    assert response.status_code == 503
-    assert "Shaper" in response.json()["detail"]
 
 
 def test_generate_instructions_returns_404_for_missing_ldr(client: TestClient) -> None:
