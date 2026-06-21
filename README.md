@@ -14,7 +14,7 @@ Local-first personal tool. Python/FastAPI backend + React frontend. Clean REST A
 | Frontend | React 18 + Vite (port 5173) |
 | Image → 3D → voxels | rembg (background removal) + Hunyuan3D-2mini (CUDA GPU) + trimesh voxelization |
 | Voxelization | trimesh (`voxelized(method="subdivide").fill()`) |
-| Text → shape | Llama 3.2-1B via llama-server (llama.cpp, port 8080) |
+| Text → shape | Claude CLI (`claude -p`) sparse-voxel emit via `CLAUDE_CODE_OAUTH_TOKEN` |
 | Piece detection | Claude claude-sonnet-4-6 via `CLAUDE_CODE_OAUTH_TOKEN` subprocess |
 | Color matching | scikit-learn + scikit-image + basic-colormath (ΔE2000) |
 | Parts database | Rebrickable CC0 CSVs + LDraw LDConfig.ldr (offline) |
@@ -25,7 +25,7 @@ Local-first personal tool. Python/FastAPI backend + React frontend. Clean REST A
 ## Prerequisites
 
 - Python 3.12+, uv, Node.js 20+
-- `llama-server` running with Llama 3.2-1B GGUF on port 8080 (text path only)
+- `claude` CLI on PATH with `CLAUDE_CODE_OAUTH_TOKEN` set (text path — `claude -p` sparse-voxel emit; no GPU, no llama-server)
 - `LDView` on PATH (`LDView --version` or `ldview --version` works)
 - `LPub3D` on PATH (`lpub3d -?` works)
 - **Image path:** a CUDA GPU + Hunyuan3D-2mini installed in the project venv. `POST /api/generate/from-image` returns a clean 503 if torch/CUDA/`hy3dgen`/weights are unavailable. (Currently installed only in the throwaway spike venv `C:\Tools\spike3d`.)
@@ -72,7 +72,7 @@ npm run build --prefix frontend
 Photo/text input
   ↓
 Image path: rembg (background removal) → Hunyuan3D-2mini → trimesh voxelization → (X,Y,Z) voxel grid (ImageShaper)
-Text path:  TextShaper (Step 6, not yet built — /from-text returns 503) → (X,Y,Z) voxel grid
+Text path:  TextShaper → claude -p sparse 20³ voxel occupancy → fill/crop → (X,Y,Z) voxel grid
   ↓
 Connectivity-graph brick packing (components + grounding + zero-added-height in-volume bonding)
   ↓
@@ -98,9 +98,8 @@ src/brickomancer/
   main.py               FastAPI app, CORS, startup data load
   routers/              generate.py, info.py
   services/             color_service, data_service, shaper (seam),
-                        image_shaper, brick_packer, ldraw_writer,
+                        image_shaper, text_shaper, brick_packer, ldraw_writer,
                         piece_detector, suggestion_service, instruction_service
-                        (text_shaper lands in Step 6)
   models/               schemas.py (Pydantic), brick.py (dataclasses)
   utils/                temp_dir.py, subprocess_utils.py
 frontend/src/
@@ -119,11 +118,12 @@ scripts/
 
 ## Status
 
-**Full rebuild in progress — Phase 3 Step 5 done, 253 tests passing.** The v1 silhouette+dome image path (which fabricated depth) and the pytest-only quality harness were removed; the project is being rebuilt around a `Shaper` seam (`services/shaper.py`, `to_voxels() -> (X, Y, Z)` bool grid) feeding a connectivity-graph brick packer. Done so far:
+**Full rebuild in progress — Phase 3 Steps 5 & 6 done, 267 tests passing.** The v1 silhouette+dome image path (which fabricated depth) and the pytest-only quality harness were removed; the project is being rebuilt around a `Shaper` seam (`services/shaper.py`, `to_voxels() -> (X, Y, Z)` bool grid) feeding a connectivity-graph brick packer. Done so far:
 
 - **Phase 0** — Hunyuan3D-2mini chosen for image→3D (TripoSG install-blocked on Windows); the LPub3D instruction header is BOM-only because `INSERT COVER_PAGE` crashes LPub3D 2.4.9.
 - **Phase 1** — in-place clean + the `Shaper` seam; the image/text generate routes were 503-stubbed pending the Shapers.
 - **Phase 2 Steps 3–4** — connectivity-graph packer (component/unsupported/articulation analysis) + zero-added-height in-volume bonding.
 - **Phase 3 Step 5** — `ImageShaper`: rembg → Hunyuan3D-2mini → trimesh voxelize, wired through `POST /api/generate/from-image`; returns 503 when the model/GPU/weights are unavailable. `height_studs` is the resolution knob.
+- **Phase 3 Step 6** — `TextShaper`: a `claude -p` subprocess emits a sparse 20³ voxel occupancy (strict JSON) → fill/crop → grid, wired through `POST /api/generate/from-text`; returns 503 when the Claude CLI is unavailable. Retires the v1 llama-server text path (no GPU needed).
 
-Next: Step 6 `TextShaper`, then the rebuilt re-render+re-score harness (Steps 9–10). 253 tests passing, 0 type errors, 0 lint violations. See [`documentation/rebuild-plan.md`](documentation/rebuild-plan.md).
+Next: Step 7 (suggestion service + preview/instruction wiring), then Step 8 + the rebuilt re-render+re-score harness (Steps 9–10). 267 tests passing, 0 type errors, 0 lint violations. See [`documentation/rebuild-plan.md`](documentation/rebuild-plan.md).

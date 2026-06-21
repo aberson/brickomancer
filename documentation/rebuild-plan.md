@@ -259,6 +259,16 @@ spike shows TripoSG installs cleanly and renders better.
   build; malformed model output is rejected/retried (mocked in unit tests); out-of-bounds coords
   are clamped.
 - **Depends on:** Steps 2, 3
+- **Status:** DONE — automated scope (2026-06-21). `TextShaper` (`services/text_shaper.py`) behind
+  the seam: `claude -p` (`subprocess_utils.run_claude_text`, OAUTH, no GPU / no llama-server) emits a
+  sparse 20³ voxel occupancy (strict JSON `{"voxels":[[x,y,z],…]}`) → parse + clamp OOB coords →
+  fill → crop-to-bbox / edge-pad sub-2 → `validate_grid`. Malformed/empty output retried (3×, like
+  `piece_detector`); a subprocess failure (no token / non-zero exit) is not retried; `TextShaperError`
+  → clean 503. Wired through `/api/generate/from-text` (build color **defaulted** — text has no source
+  image). Integration test runs the subprocess **mocked** through the router + unusable-output and
+  CLI-unavailable 503 tests; 267 tests green, 0 type, 0 lint. Packer + `Shaper.to_voxels` untouched.
+  The v1 Llama text path is fully retired. **Operator Test available now (no GPU):** live
+  `from-text "five-pointed star"` → star-recognizable build via the Claude CLI.
 
 ### Step 7: Suggestion service + preview/instruction wiring
 - **Problem:** Rebuild `suggestion_service` (3 tiers via the OR-pool downsample from

@@ -11,7 +11,7 @@ LEGO build generator. Takes a photo of a real-world object (or a text descriptio
 | Backend | Python 3.12, FastAPI, uv |
 | Frontend | React 18 + Vite (port 5173) |
 | Image → 3D → voxels | rembg (background removal) + Hunyuan3D-2mini (CUDA GPU) + trimesh voxelization |
-| Text → shape | Llama 3.2-1B via llama-server (llama.cpp, port 8080) |
+| Text → shape | Claude CLI (`claude -p`) sparse-voxel emit via `CLAUDE_CODE_OAUTH_TOKEN` |
 | Piece detection | Claude claude-sonnet-4-6 via `CLAUDE_CODE_OAUTH_TOKEN` subprocess |
 | Color matching | scikit-learn + scikit-image + basic-colormath |
 | Parts data | Rebrickable CC0 CSVs + LDraw LDConfig.ldr (offline, in `data/`) |
@@ -46,9 +46,8 @@ brickomancer/
     main.py                   # FastAPI app, CORS, startup data load
     routers/                  # generate.py, info.py
     services/                 # color_service, data_service, shaper (seam),
-                              # image_shaper, brick_packer, ldraw_writer,
+                              # image_shaper, text_shaper, brick_packer, ldraw_writer,
                               # piece_detector, suggestion_service, instruction_service
-                              # (text_shaper lands in Step 6)
     models/                   # schemas.py (Pydantic), brick.py (dataclasses + BRICK_PART_IDS, TILE_PART_IDS)
     utils/                    # temp_dir.py, subprocess_utils.py
   frontend/src/
@@ -67,15 +66,15 @@ brickomancer/
 
 ## Architecture summary
 
-**Backend (FastAPI):** Stateless REST API. Each request allocates a `tmp/<uuid>/` scratch directory (persists in V1 — no cleanup; LDR files must survive the `/instructions` call that follows). Two input paths, both behind the `Shaper` seam (`to_voxels() -> (X, Y, Z)` bool grid): image (`ImageShaper`: rembg background removal → Hunyuan3D-2mini → `trimesh.voxelized(method="subdivide").fill()` → crop/clamp/pad → voxel grid) or text (`TextShaper`, Step 6 — not yet built; `/from-text` still 503). Both converge at the connectivity-graph brick packer → LDraw file → LDView PNG previews. LPub3D generates the final instruction PDF from the selected suggestion's LDraw file.
+**Backend (FastAPI):** Stateless REST API. Each request allocates a `tmp/<uuid>/` scratch directory (persists in V1 — no cleanup; LDR files must survive the `/instructions` call that follows). Two input paths, both behind the `Shaper` seam (`to_voxels() -> (X, Y, Z)` bool grid): image (`ImageShaper`: rembg background removal → Hunyuan3D-2mini → `trimesh.voxelized(method="subdivide").fill()` → crop/clamp/pad → voxel grid) or text (`TextShaper`: a `claude -p` subprocess emits a sparse 20³ voxel occupancy → fill/crop → voxel grid). Both converge at the connectivity-graph brick packer → LDraw file → LDView PNG previews. LPub3D generates the final instruction PDF from the selected suggestion's LDraw file.
 
 **Frontend (React):** 4-step wizard. POSTs to FastAPI and shows a spinner during synchronous requests. No job queue needed for V1.
 
 **External services (must be running/on PATH before starting backend):**
-- `llama-server` on port 8080 with Llama 3.2-1B GGUF (void_furnace llama.cpp setup)
+- llama-server is **no longer used** — the v1 Llama text path was retired; text shaping now uses the Claude CLI subprocess. (`/api/status` still reports `llama_server_ok`, but no request path depends on it.)
 - `LDView` auto-detected at `C:\Tools\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe` (no PATH needed)
 - `LPub3D.exe` on PATH (install at `C:\Tools\LPub3D\`; add to `$env:PATH` before starting server)
-- `CLAUDE_CODE_OAUTH_TOKEN` as Windows user env var (for piece detection subprocess; never ANTHROPIC_API_KEY)
+- `CLAUDE_CODE_OAUTH_TOKEN` as Windows user env var (for the text `Shaper` + piece-detection subprocesses; never ANTHROPIC_API_KEY)
 - Start server WITHOUT `--reload` — WatchFiles subprocess does not inherit session PATH
 
 ## Current state
@@ -87,16 +86,15 @@ distillation: [`docs/investigations/rebuild/`](docs/investigations/rebuild/). Gi
 step issues #47-#59 (namespaced "Rebuild —"). The old v1 harness was REMOVED in Phase 1 (rebuilt
 fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
 
-**Progress: Phase 0 + Phase 1 + Phase 2 Steps 3 & 4 + Phase 3 Step 5 DONE.** 253 tests passing,
+**Progress: Phase 0 + Phase 1 + Phase 2 Steps 3 & 4 + Phase 3 Steps 5 & 6 DONE.** 267 tests passing,
 0 type errors, 0 lint violations.
 - **Phase 0:** Hunyuan3D-2mini chosen for image→3D (TripoSG install-blocked on Windows). **Toolchain
   finding: `INSERT COVER_PAGE` crashes LPub3D 2.4.9 → the frozen instruction header is BOM-only**
   (no cover page; render-verified).
 - **Phase 1:** in-place clean — `image_pipeline.py`/`text_pipeline.py` + old harness removed; the
   `Shaper` seam (`services/shaper.py`, `to_voxels() -> (X,Y,Z) bool grid`) is the swap point everything
-  downstream builds against; grid-dim constants live in `models/brick.py`. (`/from-image` is now wired
-  to `ImageShaper` — Step 5 below; `/from-text` stays 503 until Step 6; `/instructions` + `/api/status`
-  unchanged.)
+  downstream builds against; grid-dim constants live in `models/brick.py`. (`/from-image` → `ImageShaper`
+  (Step 5); `/from-text` → `TextShaper` (Step 6); `/instructions` + `/api/status` unchanged.)
 - **Phase 2 Step 3:** connectivity-graph packer (`build_connectivity_graph`,
   `connected_component_count`, `unsupported_bricks`, `articulation_points`).
   cube/star → 1 connected component + 0 unsupported; masonry seams preserved.
@@ -121,12 +119,22 @@ fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
   Integration test runs the model **mocked** through the router + a 503 test. **DEFERRED to an
   operator Test:** the plan's literal done-when (live star-survival, top-down ≥4 protrusions on the
   real model) — Hunyuan3D isn't in the project venv yet (see Environment requirements).
+- **Phase 3 Step 6 (#55):** `TextShaper` (`services/text_shaper.py`) behind the same seam — a
+  `claude -p` subprocess (`subprocess_utils.run_claude_text`, OAUTH, no GPU) emits a sparse 20³
+  voxel occupancy (strict JSON `{"voxels":[[x,y,z],…]}`) → parse + clamp OOB coords → fill →
+  crop/edge-pad → `validate_grid`. Malformed/empty output retried (3×, like `piece_detector`);
+  a subprocess failure isn't retried; `TextShaperError` → clean 503. Wired through
+  `/api/generate/from-text` (build color **defaulted** — text has no source image). Integration
+  test runs the subprocess **mocked** through the router + 503 tests. The v1 Llama text path is
+  fully retired. **Operator Test available now (no GPU):** live `from-text "five-pointed star"` →
+  star-recognizable build.
 
-**Next action: Phase 3 Step 6 (#55)** — `TextShaper`: Claude CLI emits a sparse 20³ voxel occupancy
-(strict JSON schema) → fill the `(X,Y,Z)` grid behind the same `Shaper` seam, wired through
-`/api/generate/from-text` (integration test through the router per code-quality rule). Then Steps 7–8
+**Next action: Phase 3 Step 7 (#56)** — rebuild `suggestion_service` (3 tiers via OR-pool
+downsample) + color assignment + LDView previews + parts list, and wire `instruction_service` to
+LPub3D using the **frozen BOM-only meta header** (no COVER_PAGE — crashes LPub3D 2.4.9). Then Step 8
 + Phase 4 (Steps 9–10, the rebuilt harness). **Also pending:** the Step 5 live star-survival operator
-Test once Hunyuan3D-2mini is installed in the project venv.
+Test (needs Hunyuan3D-2mini in the project venv) and the Step 6 live star-recognizable check
+(runnable now via the Claude CLI).
 
 **`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as a Windows user environment variable (not `.env`). Load in
 PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`.
@@ -138,7 +146,7 @@ The Bash tool does NOT inherit Windows user env vars.
 ## Environment requirements
 
 - Windows 11, Python 3.12+, uv, Node.js 20+
-- llama-server running before backend start (port 8080) — text path only (Step 6, not yet built)
+- Text path uses the **Claude CLI** (`claude -p` via `CLAUDE_CODE_OAUTH_TOKEN`) — no llama-server, no GPU. The v1 llama-server text path is retired.
 - **Image path now requires a CUDA GPU + Hunyuan3D-2mini installed in the project venv** (rembg → Hunyuan3D → voxelize); `/api/generate/from-image` returns a clean 503 if torch/CUDA/`hy3dgen`/weights are unavailable. The model is currently installed only in the throwaway spike venv (`C:\Tools\spike3d`); the project venv has `torch+cu118`/`rembg`/`trimesh` but not `hy3dgen` + the 7.64 GB weights yet
 - LDView auto-detected at `C:\Tools\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe` (no PATH needed)
 - LPub3D on PATH (`$env:PATH += ";C:\Tools\LPub3D"`) before starting server
