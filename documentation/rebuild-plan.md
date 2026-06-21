@@ -267,8 +267,14 @@ spike shows TripoSG installs cleanly and renders better.
   → clean 503. Wired through `/api/generate/from-text` (build color **defaulted** — text has no source
   image). Integration test runs the subprocess **mocked** through the router + unusable-output and
   CLI-unavailable 503 tests; 267 tests green, 0 type, 0 lint. Packer + `Shaper.to_voxels` untouched.
-  The v1 Llama text path is fully retired. **Operator Test available now (no GPU):** live
-  `from-text "five-pointed star"` → star-recognizable build via the Claude CLI.
+  The v1 Llama text path is fully retired. **Live Operator Test PASSED (2026-06-21, no GPU):**
+  `from-text "five-pointed star"` → a recognizable 5-pointed star (unmistakable in the face-on
+  projection; Claude stands it upright/thin, so top-down is its footprint), ~165 s/emit. The live
+  test caught two real defects the mocked tests could not: (1) `subprocess.TimeoutExpired` is not a
+  `RuntimeError`, so a timeout escaped `to_voxels` as an uncaught 500 instead of a 503; (2) the 60 s
+  budget (copied from piece detection) was too tight for the larger voxel-JSON generation. Both
+  fixed: `run_claude_text` timeout → 180 s, `to_voxels` now catches `TimeoutExpired` → 503, and the
+  prompt asks for ~80-400 voxels.
 
 ### Step 7: Suggestion service + preview/instruction wiring
 - **Problem:** Rebuild `suggestion_service` (3 tiers via the OR-pool downsample from

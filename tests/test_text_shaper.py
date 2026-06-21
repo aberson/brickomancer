@@ -11,6 +11,7 @@ raising subprocess.
 from __future__ import annotations
 
 import json
+import subprocess
 from unittest.mock import patch
 
 import numpy as np
@@ -133,6 +134,19 @@ def test_empty_voxels_retried_then_raises() -> None:
 def test_subprocess_failure_not_retried() -> None:
     """A RuntimeError from the CLI (no token / non-zero exit) raises at once, no retry."""
     with patch(_PATCH_TARGET, side_effect=RuntimeError("CLAUDE_CODE_OAUTH_TOKEN not set")) as m:
+        with pytest.raises(TextShaperError, match="Claude CLI unavailable"):
+            TextShaper("x").to_voxels()
+    assert m.call_count == 1
+
+
+def test_subprocess_timeout_raises_text_shaper_error() -> None:
+    """A CLI timeout (TimeoutExpired, not a RuntimeError) is caught -> TextShaperError.
+
+    Regression guard: the live emit can exceed the timeout, and TimeoutExpired must
+    surface as a clean 503 at the route, not an uncaught 500. Not retried.
+    """
+    timeout_exc = subprocess.TimeoutExpired(cmd=["claude", "-p"], timeout=180)
+    with patch(_PATCH_TARGET, side_effect=timeout_exc) as m:
         with pytest.raises(TextShaperError, match="Claude CLI unavailable"):
             TextShaper("x").to_voxels()
     assert m.call_count == 1

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 
 import numpy as np
 
@@ -66,7 +67,8 @@ def _build_prompt(description: str) -> str:
         "Return ONLY valid JSON, no other text, in exactly this shape:\n"
         '{"voxels": [[x, y, z], ...]}\n'
         "where each [x, y, z] is one OCCUPIED cell. Make the object recognizable, "
-        "solid (not a hollow shell), connected, and grounded. Use 150-1500 voxels."
+        "solid (not a hollow shell), connected, and grounded. Use about 80-400 "
+        "voxels -- enough to be recognizable, few enough to emit quickly."
     )
 
 
@@ -164,7 +166,9 @@ class TextShaper(Shaper):
         for _ in range(_MAX_ATTEMPTS):
             try:
                 raw = run_claude_text(prompt)
-            except RuntimeError as exc:  # no token / non-zero exit: not retryable
+            except (RuntimeError, subprocess.TimeoutExpired) as exc:
+                # No token / non-zero exit / timeout: the CLI is unavailable or too
+                # slow. Not retryable -> surface as a clean 503 at the route.
                 raise TextShaperError(f"Claude CLI unavailable: {exc}") from exc
             try:
                 coords = _parse_voxels(raw)

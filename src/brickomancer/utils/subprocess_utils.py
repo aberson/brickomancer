@@ -47,7 +47,7 @@ def run_claude_subprocess(prompt: str, image_path: str) -> str:
     return result.stdout
 
 
-def run_claude_text(prompt: str) -> str:
+def run_claude_text(prompt: str, timeout: int = 180) -> str:
     """Call the Claude CLI subprocess with a text-only prompt (no image).
 
     The text-path counterpart of :func:`run_claude_subprocess`: no ``--image``,
@@ -57,6 +57,9 @@ def run_claude_text(prompt: str) -> str:
 
     Args:
         prompt: The full prompt text to send to Claude.
+        timeout: Seconds before the subprocess is killed. Default 180 -- larger
+            than the piece-detection path because emitting a voxel occupancy is a
+            big JSON generation on top of the CLI's startup overhead.
 
     Returns:
         Raw string output from Claude (expected to be JSON).
@@ -64,6 +67,8 @@ def run_claude_text(prompt: str) -> str:
     Raises:
         RuntimeError: If ``CLAUDE_CODE_OAUTH_TOKEN`` is not set, or the
             subprocess exits with a non-zero return code.
+        subprocess.TimeoutExpired: If the call exceeds *timeout* seconds (the
+            caller treats this as an unavailable CLI).
     """
     token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
     if not token:
@@ -74,7 +79,7 @@ def run_claude_text(prompt: str) -> str:
         cmd,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=timeout,
         env={**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": token},
     )
     if result.returncode != 0:
