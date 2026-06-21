@@ -1,97 +1,54 @@
 # Task State — Brickomancer
 
-**Task:** Fix harness issues then run_harness 20 iterations (run-11)
-**Status:** IN_PROGRESS — run-10 complete with old code; fixes needed before run-11
-**Last written:** 2026-06-15T20:00:00Z
-**Session SHA:** b0c6825
+**Task:** Phase 3 rebuild — Image/Text Shapers behind the Shaper seam
+**Status:** Step 5 (ImageShaper, #54) DONE + shipped; ready to start Step 6 (TextShaper, #55)
+**Last written:** 2026-06-21T04:03:01Z
+**Session SHA:** 54a9913
 
 ## Current WIP
 
-Run-10 completed 20/20 iterations but ran the **old pre-refactor code**, not judge+applier.
-Evidence: `SKIPPED_PARSE_ERROR` in scores (old error code), log says "running 8 advisors",
-log says "developer_agent: committed" instead of applier commit messages, no `judge_rationale`
-field in scores.jsonl rows. Root cause: background process launched with `PYTHONPATH` trick
-picked up stale `.pyc` bytecache or old import path — the new `run_harness.py` was never
-actually executed.
+Nothing in flight. Phase 3 Step 5 (ImageShaper, #54) is committed (`54a9913`), pushed, and
+issue #54 is closed. 253 tests pass, 0 type errors, 0 lint. The next unit of work is Step 6.
 
-Run-10 avg_raw scores: 3.25–5.375, no meaningful improvement over run-9 baseline (~3.375).
-19 commits landed (iters 1–13, 15–16, 19 committed; 14, 18, 20 reverted).
+## Completed (recent)
 
-## Issues to Fix Before Run-11
+- **Phase 3 Step 5 (#54):** `ImageShaper` (`services/image_shaper.py`) behind the Shaper seam —
+  rembg → Hunyuan3D-2mini → `trimesh.voxelized(method="subdivide").fill()` → `_fit_to_bounds`
+  → `validate_grid`. Wired through `/api/generate/from-image`; `ModelUnavailableError` → clean
+  503. `height_studs` is the resolution knob (`max_dim`, clamped `[2,32]`); `max_dim=28` packs
+  ~66 s/tier so the route uses `height_studs`. Tests: `test_image_shaper.py` +
+  `test_generate_from_image_route.py` (model mocked + a model-unavailable 503).
+- **repo-update:** README/CLAUDE.md/plan/memory refreshed; a cross-project lessons-learned entry
+  added to the dev/ repo (`ec2c4df`). #54 closed.
 
-### Issue 1: Harness ran old code (CRITICAL)
-The judge+applier loop never executed. `applier.py` log strings still say `developer_agent:`
-(inherited from old code) — these need renaming so future runs are diagnosable.
+## Dead ends / superseded
 
-**Fix:**
-- In `applier.py`: rename all `log.info("developer_agent: ...")` calls to `log.info("applier: ...")`
-- In `advisor.py`: fix log string "running 8 advisors in parallel" → "running %d advisors in parallel" with actual count
-- Verify `run_harness.py` imports resolve correctly by running dry-run: `uv run python -c "from tests.harness.run_harness import main; print('OK')"` with PYTHONPATH set
-- Delete `tests/harness/**/__pycache__` before next run to prevent stale .pyc interference
-- Add `PYTHONIOENCODING=utf-8` to server launch command or set in environment to prevent cp1252 `→` crash
+- The pre-rebuild **"harness run-11 / run_harness 20 iterations"** task (this file's prior
+  content) is **ABANDONED** — the v1 harness was removed in Phase 1 and is not rebuilt until
+  Step 9. Do NOT resume harness work or run `/run-harness` (stale until Step 9).
 
-### Issue 2: server.py `→` arrow cp1252 crash (already fixed in this session)
-`log.info("Server process started (pid=%d); log → %s")` crashes on cp1252 terminals.
-Fixed: replaced `→` with `->` in server.py. Verify this is committed.
+## Critical gotchas
 
-### Issue 3: warnings_judge not running (9 vs 8)
-Log says "running 8 advisors in parallel" — `warnings_judge` not being invoked.
-Check `advisor.py` thread pool size and whether `warnings_judge` is included in the
-advisor list loaded from advisors.yaml.
+- `/from-image` needs a CUDA GPU + Hunyuan3D-2mini in the **project** venv; returns 503 otherwise.
+  The model is only in the throwaway `C:\Tools\spike3d` now (project venv needs the 7.64 GB weights).
+- Clean gate: `uv run pytest -q --ignore=tests/integration`. Server: `uv run uvicorn --app-dir src
+  brickomancer.main:app` (no `--reload`); `CLAUDE_CODE_OAUTH_TOKEN` is a Windows user env var, not `.env`.
 
-### Issue 4: PYTHONPATH must be set for harness launch
-Old invocation `uv run python tests/harness/run_harness.py` fails with
-`ModuleNotFoundError: No module named 'tests'` unless `PYTHONPATH` is set.
-The correct launch command is:
-```powershell
-$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")
-$env:PATH += ";C:\Tools\LPub3D"
-$env:PYTHONPATH = "C:\Users\abero\dev\brickomancer"
-$env:PYTHONIOENCODING = "utf-8"
-uv run python tests/harness/run_harness.py --iterations 20
-```
+## Key files
+
+- `documentation/rebuild-plan.md` § Step 6 — next spec + done-when
+- `src/brickomancer/services/shaper.py` — seam contract (`to_voxels() -> (X,Y,Z)` bool grid)
+- `src/brickomancer/services/image_shaper.py` — the Step 5 sibling to mirror
+- `src/brickomancer/routers/generate.py` — route wiring (`/from-text` is the 503 stub to replace)
 
 ## Next Action
 
-1. Check whether server.py `->` fix is committed (should be in working tree, not committed yet)
-2. Fix applier.py log strings: `developer_agent:` → `applier:` 
-3. Fix advisor.py log string: hardcoded "8" → actual count
-4. Clear pycache: `Remove-Item -Recurse -Force tests/harness/__pycache__` (and src pycache)
-5. Run dry-run import test to confirm new code loads: `$env:PYTHONPATH = "C:\Users\abero\dev\brickomancer"; uv run python -c "from tests.harness.run_harness import main; print('imports OK')"`
-6. Commit fixes
-7. Launch run-11: `$env:PYTHONPATH = "C:\Users\abero\dev\brickomancer"; $env:PYTHONIOENCODING = "utf-8"; uv run python tests/harness/run_harness.py --iterations 20`
-8. Confirm iter 1 log shows "applier:" and "running 9 advisors" before leaving it to run
+Start **Phase 3 Step 6 (#55) — TextShaper**: a Claude CLI subprocess emits a sparse 20³ voxel
+occupancy (strict JSON schema) → fill the `(X,Y,Z)` grid behind the same Shaper seam, wired
+through `/api/generate/from-text` with an integration test through the router. Read
+`documentation/rebuild-plan.md` § Step 6 first; mirror `image_shaper.py`'s structure.
 
-## Completed This Session
+## Pending (operator-gated)
 
-- Harness refactored: judge+applier architecture, warnings_judge (9th advisor), 340 tests (088730b)
-- repo-update: README, CLAUDE.md, master_plan.md updated; issue #45 closed; pushed
-- Run-10 launched and completed 20/20 iterations (ran old code — see issues above)
-- server.py: `→` replaced with `->` to fix cp1252 crash (not yet committed)
-
-## Dead Ends
-
-- Running harness via background PowerShell task without PYTHONPATH → `ModuleNotFoundError: No module named 'tests'`
-- Using `uv run python -m tests.harness.run_harness` as alternative (not tried yet — may work without PYTHONPATH)
-
-## Key Files
-
-- `tests/harness/run_harness.py` — thin entry point (judge+applier loop)
-- `tests/harness/judge.py` — reads advisor reports, produces change brief
-- `tests/harness/applier.py` — executes change brief; log strings say "developer_agent:" (BUG — fix)
-- `tests/harness/advisor.py` — 9 advisor engine; log string says "8 advisors" (BUG — fix)
-- `tests/harness/server.py` — server lifecycle; `->` fix applied, not committed
-- `tests/harness/scores.jsonl` — run-10 results (20 rows, old code path)
-- `tests/harness/advisors.yaml` — 9 advisors including warnings_judge
-
-## Critical Gotchas
-
-- Always launch harness from PowerShell — Bash tool does NOT inherit Windows user env vars
-- PYTHONPATH must be set: `$env:PYTHONPATH = "C:\Users\abero\dev\brickomancer"`
-- PYTHONIOENCODING must be utf-8 to prevent cp1252 crash on `→` or similar Unicode
-- Set PATH to include LPub3D before starting
-- Harness server runs on port 8005 (not 8000)
-- pytest gate: `uv run pytest -q --ignore=tests/integration`
-- Judge `blocking_issues` non-empty → applier returns SKIPPED_BLOCKED
-- warnings_judge score: 10=healthy, 0=crisis
-- Confirm run is using NEW code by checking first iter log for "applier:" and "9 advisors"
+- Step 5 **live star-survival operator Test** (top-down ≥4 protrusions on the real model) — needs
+  Hunyuan3D-2mini installed in the project venv first.
