@@ -60,6 +60,12 @@ _ROT_Y_90_MATRIX = "0 0 1 0 1 0 -1 0 0"
 
 _TILE_PART_ID_SET: frozenset[str] = frozenset(TILE_PART_IDS.values())
 
+# The FROZEN LPub3D meta header (Phase 0.2, render-verified): the ONLY `0 !` meta
+# command emitted is the BOM. `0 !LPUB INSERT COVER_PAGE` CRASHES LPub3D 2.4.9 and
+# FADE_STEPS churn was part of the v1 plateau oscillation, so neither is emitted.
+# Kept as a constant so the meta layer is never dynamically generated/edited.
+_BOM_META: str = "0 !LPUB INSERT BOM"
+
 MAX_BRICKS_PER_STEP: int = 8
 
 
@@ -137,10 +143,11 @@ def write_ldr(
     the last, so LPub3D renders each step as a separate page.  Empty steps
     are skipped entirely to prevent LPub3D from rendering a blank page 1.
 
-    LPub3D meta commands emitted:
-    - File header: FADE_STEPS ENABLED and SETUP OPACITY lines.
-    - After header meta commands: ``0 STEP`` then ``0 !LPUB INSERT COVER_PAGE``.
-    - Immediately after final ``0 STEP``: ``0 !LPUB INSERT BOM``.
+    LPub3D meta commands emitted (the FROZEN BOM-only header — Phase 0.2):
+    - File header: title / Name / Author / Tier comment lines only (no FADE_STEPS).
+    - NO ``0 !LPUB INSERT COVER_PAGE`` — it CRASHES LPub3D 2.4.9 (render-verified,
+      Step 0.2). The only ``0 !`` meta command is the BOM.
+    - Immediately after the final ``0 STEP``: ``0 !LPUB INSERT BOM``.
 
     Args:
         placements: list[BrickPlacement] to write.
@@ -159,20 +166,22 @@ def write_ldr(
         "0 Author: Brickomancer",
         f"0 Tier: {tier_name}",
         "",
-        "0 !LPUB FADE_STEPS ENABLED TRUE",
-        "0 !LPUB FADE_STEPS SETUP OPACITY 50",
-        "0 STEP",
-        "0 !LPUB INSERT COVER_PAGE",
     ]
 
+    wrote_step = False
     for step_bricks in steps:
         if not step_bricks:
             continue
         for bp in step_bricks:
             lines.append(_brick_line(bp))
         lines.append("0 STEP")
+        wrote_step = True
 
-    lines.append("0 !LPUB INSERT BOM")
+    # Keep the BOM-after-final-step invariant even for an empty build (degenerate,
+    # but never emit a BOM with no preceding step).
+    if not wrote_step:
+        lines.append("0 STEP")
+    lines.append(_BOM_META)
 
     parent = os.path.dirname(os.path.abspath(output_path))
     if parent:

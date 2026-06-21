@@ -424,8 +424,9 @@ class TestWriteLdr:
             content = open(path, encoding="utf-8").read()
             lines = content.splitlines()
             step_indices = [i for i, line in enumerate(lines) if line.strip() == "0 STEP"]
-            # 17 bricks → 3 batches (8, 8, 1) → 3 STEP markers (one per batch) + 1 cover page STEP
-            assert len(step_indices) == 4
+            # 17 bricks → 3 batches (8, 8, 1) → 3 STEP markers (one per batch).
+            # No cover-page STEP: COVER_PAGE was removed in Step 7 (crashes LPub3D 2.4.9).
+            assert len(step_indices) == 3
 
     def test_trailing_step_marker_present(self):
         """The last batch must be followed by 0 STEP so LPub3D renders it."""
@@ -434,8 +435,8 @@ class TestWriteLdr:
             path = os.path.join(tmpdir, "laststep.ldr")
             write_ldr(bricks, path)
             content = open(path, encoding="utf-8").read()
-            # 1 build batch STEP + 1 cover page STEP
-            assert content.count("0 STEP") == 2
+            # 1 build batch STEP, no cover-page STEP (COVER_PAGE removed in Step 7).
+            assert content.count("0 STEP") == 1
 
     def test_step_marker_after_exactly_8(self):
         """16 bricks → exactly 2 STEP markers, one per batch."""
@@ -444,8 +445,8 @@ class TestWriteLdr:
             path = os.path.join(tmpdir, "mid.ldr")
             write_ldr(bricks, path)
             content = open(path, encoding="utf-8").read()
-            # 2 build batch STEPs + 1 cover page STEP
-            assert content.count("0 STEP") == 3
+            # 2 build batch STEPs, no cover-page STEP (COVER_PAGE removed in Step 7).
+            assert content.count("0 STEP") == 2
 
 
 

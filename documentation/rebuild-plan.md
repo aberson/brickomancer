@@ -291,6 +291,17 @@ spike shows TripoSG installs cleanly and renders better.
   parts pages + a BOM page from the frozen header. **AMENDED 2026-06-17:** no cover page — the
   frozen header is BOM-only (COVER_PAGE crashes LPub3D 2.4.9; render-verified in Step 0.2).
 - **Depends on:** Steps 5, 6
+- **Status:** DONE — render-verified (2026-06-21). `suggestion_service` (already 3-tier with the
+  OR-pool downsample) returns 3 tiers with distinct `parts_count`. **Real bug fixed:** `ldraw_writer`
+  was still emitting `0 !LPUB INSERT COVER_PAGE` (Phase 0.2 froze the fixture + its test but never the
+  production writer) — so every instruction PDF would have crashed LPub3D 2.4.9. The writer now emits
+  the FROZEN BOM-only header (`_BOM_META` constant; no COVER_PAGE, no FADE_STEPS; BOM after the final
+  `0 STEP`). New `tests/test_ldraw_writer.py` guards the producer output (constant present, no
+  COVER_PAGE, BOM-only metas, BOM-after-last-step); 3 stale `TestWriteLdr` step-count tests updated
+  (dropped the +1 cover-page step). **In-window REAL render (`scripts/step7_render_uat.py`):** LDView
+  → 25 KB PNG; LPub3D → 267 KB ~3-page PDF with BOM, no crash. 273 tests, 0 type, 0 lint; packer +
+  `Shaper.to_voxels` untouched. This is the exact pytest-vs-render blind spot — the mocked gate passed
+  the COVER_PAGE writer; only the real render caught it.
 
 ### Step 8: Frontend + end-to-end smoke gate
 - **Problem:** Port the v1 React 4-step wizard (it's fine) and wire it to the rebuilt routes. Add
