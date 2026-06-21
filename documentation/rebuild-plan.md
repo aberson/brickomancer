@@ -352,6 +352,18 @@ spike shows TripoSG installs cleanly and renders better.
   improvement and asserts it is committed, and (c) asserts the frozen meta-header constant is in
   the judge's forbidden/`constraints_to_preserve` set. All three pass under `uv run pytest -q`.
 - **Depends on:** Step 8
+- **Status:** DONE (2026-06-21). Rebuilt `tests/harness/` (was removed in Phase 1): `judge`
+  (`DIMENSION_SOURCE_FILES` + `CONSTRAINTS_TO_PRESERVE` + change-brief prompt), `scorer`
+  (`EVAL_SET` + `render_and_score` = re-render + deterministic structural re-score), `applier`
+  (the gate: apply → pytest → **re-render + re-score** → commit-only-if-no-regression-else-revert;
+  `run_tests` + `render_and_score` injectable). **Key design change from v1:** the judge's
+  `LPUB3D_META_REFERENCE` that *offered* COVER_PAGE/FADE_STEPS (the plateau oscillation surface) is
+  replaced by `CONSTRAINTS_TO_PRESERVE` — the frozen BOM-only header is now a hard constraint the
+  judge may never edit. `tests/harness/test_regression_gate.py` passes all 3 done-when assertions
+  (b1 blanked-PDF change reverted, b2 improvement committed, b3 `_BOM_META` in constraints) + a
+  bonus pytest-fail revert, fast via injected fakes. 277 clean-gate tests, 0 type, 0 lint; packer +
+  seam untouched. **Scope:** Step 9 ships + tests the regression GATE; the full unattended
+  hill-climb loop (advisors + LLM judge wiring + the slow real `render_and_score`) runs in Step 10.
 
 ### Step 10: Calibration run
 - **Problem:** Run the rebuilt harness for **5 iterations** on the eval set (extend to up to 20 if
