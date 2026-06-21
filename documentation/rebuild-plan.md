@@ -314,6 +314,18 @@ spike shows TripoSG installs cleanly and renders better.
 - **Done when:** `npm run build` clean; integration smoke passes with real services; image path
   completes in a reasonable wall-clock (record it).
 - **Depends on:** Step 7
+- **Status:** DONE — smoke-verified (2026-06-21). The v1 React 4-step wizard already calls only the
+  current routes (`/from-image`, `/from-text`, `/instructions`) with matching request/response
+  shapes; `npm run build` clean (tsc + vite, 36 modules, 621 ms). `tests/integration/test_smoke.py`
+  rebuilt to exercise BOTH paths + instructions through the REAL services (TestClient, nothing
+  mocked; retired the v1 TripoSR/llama-server guards), gated on `BRICKOMANCER_INTEGRATION=1` +
+  per-path availability. **Live run PASSED:** from-text 73 s, from-image (real Hunyuan3D) **1019 s
+  (~17 min)**, instructions PDF (real LPub3D, frozen BOM-only header) 9 s. 273 clean-gate tests, 0
+  type, 0 lint; packer + `Shaper.to_voxels` untouched. **FINDING — image path ~17 min/request:**
+  `ImageShaper._load_pipeline` runs `from_pretrained` (7.64 GB) on EVERY request (no cached pipeline)
+  + rembg first-run + 3-tier pack + 3 LDView renders. Caching the loaded pipeline as a module
+  singleton is the obvious fix (drops repeat requests toward inference-only ~100 s) — deferred as an
+  ImageShaper perf follow-up (out of Step 8 scope; Step 8 = frontend + smoke).
 
 ---
 

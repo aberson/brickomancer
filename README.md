@@ -118,12 +118,14 @@ scripts/
 
 ## Status
 
-**Full rebuild in progress — Phase 3 Steps 5 & 6 done, 267 tests passing.** The v1 silhouette+dome image path (which fabricated depth) and the pytest-only quality harness were removed; the project is being rebuilt around a `Shaper` seam (`services/shaper.py`, `to_voxels() -> (X, Y, Z)` bool grid) feeding a connectivity-graph brick packer. Done so far:
+**Full rebuild in progress — Phase 3 COMPLETE (Steps 5–8), 273 tests passing.** The v1 silhouette+dome image path (which fabricated depth) and the pytest-only quality harness were removed; the project is being rebuilt around a `Shaper` seam (`services/shaper.py`, `to_voxels() -> (X, Y, Z)` bool grid) feeding a connectivity-graph brick packer. Both input paths now render end-to-end (smoke-verified). Done so far:
 
 - **Phase 0** — Hunyuan3D-2mini chosen for image→3D (TripoSG install-blocked on Windows); the LPub3D instruction header is BOM-only because `INSERT COVER_PAGE` crashes LPub3D 2.4.9.
 - **Phase 1** — in-place clean + the `Shaper` seam; the image/text generate routes were 503-stubbed pending the Shapers.
 - **Phase 2 Steps 3–4** — connectivity-graph packer (component/unsupported/articulation analysis) + zero-added-height in-volume bonding.
 - **Phase 3 Step 5** — `ImageShaper`: rembg → Hunyuan3D-2mini → trimesh voxelize, wired through `POST /api/generate/from-image`; returns 503 when the model/GPU/weights are unavailable. `height_studs` is the resolution knob.
 - **Phase 3 Step 6** — `TextShaper`: a `claude -p` subprocess emits a sparse 20³ voxel occupancy (strict JSON) → fill/crop → grid, wired through `POST /api/generate/from-text`; returns 503 when the Claude CLI is unavailable. Retires the v1 llama-server text path (no GPU needed).
+- **Phase 3 Step 7** — frozen **BOM-only** LPub3D instruction header; fixed a latent crash (`ldraw_writer` still emitted `COVER_PAGE`, which crashes LPub3D 2.4.9). Render-verified: LDView PNG + LPub3D multi-page PDF with BOM.
+- **Phase 3 Step 8** — React wizard wired to the rebuilt routes (`npm run build` clean); `tests/integration/test_smoke.py` exercises both paths + instructions against the real services (gated on `BRICKOMANCER_INTEGRATION=1`). Smoke PASSED: text 73 s, **image 1019 s (~17 min — pipeline-caching perf follow-up)**, instructions 9 s.
 
-Next: Step 7 (suggestion service + preview/instruction wiring), then Step 8 + the rebuilt re-render+re-score harness (Steps 9–10). 267 tests passing, 0 type errors, 0 lint violations. See [`documentation/rebuild-plan.md`](documentation/rebuild-plan.md).
+Next: Phase 4 — Step 9 (render-scoring harness with a regression gate), then Step 10 (calibration run). 273 tests passing, 0 type errors, 0 lint violations. See [`documentation/rebuild-plan.md`](documentation/rebuild-plan.md).

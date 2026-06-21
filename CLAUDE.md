@@ -86,8 +86,8 @@ distillation: [`docs/investigations/rebuild/`](docs/investigations/rebuild/). Gi
 step issues #47-#59 (namespaced "Rebuild —"). The old v1 harness was REMOVED in Phase 1 (rebuilt
 fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
 
-**Progress: Phase 0 + Phase 1 + Phase 2 Steps 3 & 4 + Phase 3 Steps 5 & 6 DONE.** 267 tests passing,
-0 type errors, 0 lint violations.
+**Progress: Phase 0 + Phase 1 + Phase 2 Steps 3 & 4 + Phase 3 COMPLETE (Steps 5–8).** 273 tests
+passing, 0 type errors, 0 lint violations. Both input paths render end-to-end (smoke-verified).
 - **Phase 0:** Hunyuan3D-2mini chosen for image→3D (TripoSG install-blocked on Windows). **Toolchain
   finding: `INSERT COVER_PAGE` crashes LPub3D 2.4.9 → the frozen instruction header is BOM-only**
   (no cover page; render-verified).
@@ -116,25 +116,33 @@ fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
   `suggestion_service`). `ModelUnavailableError` (no torch/CUDA/`hy3dgen`/weights/degenerate mesh) →
   clean 503. **`height_studs` is the resolution knob** (`ImageShaper(max_dim=height_studs)`, clamped
   to `[2, 32]`): the spike's `max_dim=28` packs ~66 s/tier (×3 = unusable); `max_dim≈10` packs <2 s.
-  Integration test runs the model **mocked** through the router + a 503 test. **DEFERRED to an
-  operator Test:** the plan's literal done-when (live star-survival, top-down ≥4 protrusions on the
-  real model) — Hunyuan3D isn't in the project venv yet (see Environment requirements).
+  Integration test runs the model **mocked** through the router + a 503 test. (Hunyuan3D-2mini is now
+  installed in the project venv — the Step 8 smoke runs the real image path; see Step 8.)
 - **Phase 3 Step 6 (#55):** `TextShaper` (`services/text_shaper.py`) behind the same seam — a
   `claude -p` subprocess (`subprocess_utils.run_claude_text`, OAUTH, no GPU) emits a sparse 20³
   voxel occupancy (strict JSON `{"voxels":[[x,y,z],…]}`) → parse + clamp OOB coords → fill →
   crop/edge-pad → `validate_grid`. Malformed/empty output retried (3×, like `piece_detector`);
-  a subprocess failure isn't retried; `TextShaperError` → clean 503. Wired through
-  `/api/generate/from-text` (build color **defaulted** — text has no source image). Integration
-  test runs the subprocess **mocked** through the router + 503 tests. The v1 Llama text path is
-  fully retired. **Operator Test available now (no GPU):** live `from-text "five-pointed star"` →
-  star-recognizable build.
+  a subprocess failure / CLI timeout isn't retried; `TextShaperError` → clean 503. Wired through
+  `/api/generate/from-text` (build color **defaulted**). The v1 Llama text path is fully retired.
+  Live-verified: `from-text "five-pointed star"` → recognizable star.
+- **Phase 3 Step 7 (#56):** frozen **BOM-only** LPub3D header. Fixed a latent crash — `ldraw_writer`
+  still emitted `0 !LPUB INSERT COVER_PAGE` (crashes LPub3D 2.4.9); now emits the `_BOM_META`
+  constant only (no COVER_PAGE / FADE_STEPS; BOM after the final `0 STEP`). `suggestion_service`
+  already 3-tier (OR-pool). `tests/test_ldraw_writer.py` guards the producer;
+  `scripts/step7_render_uat.py` render-verified (LDView PNG + LPub3D 3-page PDF + BOM, no crash).
+- **Phase 3 Step 8 (#57):** frontend (v1 React wizard, already on the current routes) `npm run build`
+  clean; `tests/integration/test_smoke.py` rebuilt to exercise BOTH paths + instructions through the
+  **real** services (TestClient, nothing mocked), gated on `BRICKOMANCER_INTEGRATION=1`. Smoke PASSED:
+  from-text 73 s, **from-image (real Hunyuan3D) 1019 s (~17 min)**, instructions PDF 9 s.
+  **PERF FINDING:** the image path is ~17 min/request — `ImageShaper._load_pipeline` runs
+  `from_pretrained` (7.64 GB) on EVERY request (no cached pipeline). Caching it as a module singleton
+  is the obvious fix (deferred; ImageShaper perf follow-up).
 
-**Next action: Phase 3 Step 7 (#56)** — rebuild `suggestion_service` (3 tiers via OR-pool
-downsample) + color assignment + LDView previews + parts list, and wire `instruction_service` to
-LPub3D using the **frozen BOM-only meta header** (no COVER_PAGE — crashes LPub3D 2.4.9). Then Step 8
-+ Phase 4 (Steps 9–10, the rebuilt harness). **Also pending:** the Step 5 live star-survival operator
-Test (needs Hunyuan3D-2mini in the project venv) and the Step 6 live star-recognizable check
-(runnable now via the Claude CLI).
+**Next action: Phase 4 Step 9 (#58)** — rebuild the harness so the commit gate is **rendered-output
+score regression** (re-render + re-score the PNG/PDF with an LLM judge, not pytest alone); hold a
+fixed eval set; the frozen meta header goes in `constraints_to_preserve`. Then Step 10 (calibration
+run, `Type: wait`). **Also pending (operator, optional):** the Step 5 live star-survival check
+(top-down ≥4 protrusions) and the ImageShaper pipeline-caching perf fix.
 
 **`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as a Windows user environment variable (not `.env`). Load in
 PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`.
@@ -147,7 +155,7 @@ The Bash tool does NOT inherit Windows user env vars.
 
 - Windows 11, Python 3.12+, uv, Node.js 20+
 - Text path uses the **Claude CLI** (`claude -p` via `CLAUDE_CODE_OAUTH_TOKEN`) — no llama-server, no GPU. The v1 llama-server text path is retired.
-- **Image path now requires a CUDA GPU + Hunyuan3D-2mini installed in the project venv** (rembg → Hunyuan3D → voxelize); `/api/generate/from-image` returns a clean 503 if torch/CUDA/`hy3dgen`/weights are unavailable. The model is currently installed only in the throwaway spike venv (`C:\Tools\spike3d`); the project venv has `torch+cu118`/`rembg`/`trimesh` but not `hy3dgen` + the 7.64 GB weights yet
+- **Image path requires a CUDA GPU + Hunyuan3D-2mini in the project venv** (rembg → Hunyuan3D → voxelize); `/api/generate/from-image` returns a clean 503 if torch/CUDA/`hy3dgen`/weights are unavailable. `hy3dgen` is now installed (editable, from `C:\Tools\hunyuan-src` via `uv pip install -e`; NOT in `pyproject`/lock, so fresh worktrees won't have it — run build steps in-place). Weights cached in the HF cache (`~/.cache/huggingface`). **The image path is ~17 min/request** (per-request `from_pretrained` of the 7.64 GB model — caching the pipeline is a known perf follow-up). One `uv pip check` warning: `typer 0.26.7` vs `huggingface-hub<0.26.0` — benign (CLI-only; our path uses the `from_pretrained` API)
 - LDView auto-detected at `C:\Tools\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe` (no PATH needed)
 - LPub3D on PATH (`$env:PATH += ";C:\Tools\LPub3D"`) before starting server
 - `CLAUDE_CODE_OAUTH_TOKEN` as Windows user environment variable (not `.env`; inherited by `.bat` launcher; load manually in PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`)
