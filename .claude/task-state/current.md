@@ -1,15 +1,21 @@
 # Task State — Brickomancer
 
-**Task:** Brickomancer rebuild — Phase 4 (closed-loop quality harness)
-**Status:** Phases 0–3 + Phase 4 Step 9 DONE; only Step 10 (calibration `wait`) remains
-**Last written:** 2026-06-21T05:55:00Z
-**Session SHA:** c6de8f5
+**Task:** Brickomancer rebuild — Phase 4 Step 10: calibration run (harness hill-climb)
+**Status:** ACTIVE — switched to Step 10 (calibration, `Type: wait`, #59). Phases 0–3 + Step 9 shipped (277 tests).
+**Last written:** 2026-06-21T06:10:00Z
+**Session SHA:** 2d0d3fa
 
 ## Current WIP
 
-Nothing in flight. The rebuild is code-complete through Step 9: both input paths render end-to-end
-(smoke-verified) and the render-score regression gate is built + tested. 277 clean-gate tests, 0 type,
-0 lint. The only remaining step is Step 10 — an operator-run calibration (`Type: wait`).
+**Active task: Phase 4 Step 10 — calibration run** (`Type: wait`, #59): drive the rebuilt harness
+~5 iterations on the eval set, confirm `avg_raw` trends up (v1 was flat 3.5–5.1), record the trajectory
+in `docs/investigations/rebuild/05-calibration-result.md`. This is long, operator-run observation —
+build-phase would halt on it by the wait-step contract.
+
+**Two prereqs before a useful calibration run:** (1) the **ImageShaper pipeline-caching perf fix** —
+image eval is ~17 min/item without it (caches `from_pretrained` as a module singleton); (2) the
+**`/run-harness` skill** still assumes the v1 harness layout and must be updated to drive the rebuilt
+`tests/harness/` (judge/scorer/applier). Until both land, calibration can only run on the text eval set.
 
 ## Completed (recent)
 
