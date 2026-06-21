@@ -1,35 +1,35 @@
 # Task State — Brickomancer
 
 **Task:** Brickomancer rebuild — Phase 4 (closed-loop quality harness)
-**Status:** Phase 3 COMPLETE (Steps 5–8 shipped); ready to start Phase 4 Step 9 (harness)
-**Last written:** 2026-06-21T05:30:00Z
-**Session SHA:** 8ed30ca
+**Status:** Phases 0–3 + Phase 4 Step 9 DONE; only Step 10 (calibration `wait`) remains
+**Last written:** 2026-06-21T05:55:00Z
+**Session SHA:** c6de8f5
 
 ## Current WIP
 
-Nothing in flight. Phase 3 is complete — both input paths render end-to-end (smoke-verified with
-real services). 273 clean-gate tests, 0 type, 0 lint. The next unit of work is Step 9 (Phase 4).
+Nothing in flight. The rebuild is code-complete through Step 9: both input paths render end-to-end
+(smoke-verified) and the render-score regression gate is built + tested. 277 clean-gate tests, 0 type,
+0 lint. The only remaining step is Step 10 — an operator-run calibration (`Type: wait`).
 
 ## Completed (recent)
 
-- **Phase 3 Step 5 (#54):** `ImageShaper` — rembg → Hunyuan3D-2mini → voxelize → `validate_grid`;
-  `/from-image`; `ModelUnavailableError` → 503. `height_studs` = resolution knob (`max_dim`).
-- **Phase 3 Step 6 (#55):** `TextShaper` — `claude -p` sparse 20³ voxel JSON → grid; `/from-text`;
-  retries + `TextShaperError`/timeout → 503. Retires the v1 llama-server text path.
-- **Phase 3 Step 7 (#56):** frozen BOM-only LPub3D header. Fixed a latent crash — `ldraw_writer`
-  still emitted `0 !LPUB INSERT COVER_PAGE` (crashes LPub3D 2.4.9); now `_BOM_META` only.
-  `tests/test_ldraw_writer.py` + `scripts/step7_render_uat.py` render-verified.
-- **Phase 3 Step 8 (#57):** frontend on current routes (`npm run build` clean);
-  `tests/integration/test_smoke.py` rebuilt for real services (gated `BRICKOMANCER_INTEGRATION=1`).
-  Smoke PASSED: text 73 s, **image 1019 s (~17 min)**, instructions 9 s.
+- **Phase 3 Step 5–8 (#54–57):** ImageShaper, TextShaper, frozen BOM-only LPub3D header (fixed the
+  COVER_PAGE crash), frontend + real-services smoke. Both paths render end-to-end.
+- **Phase 4 Step 9 (#58):** rebuilt `tests/harness/` (judge / scorer / applier) with the **render-score
+  regression gate** — apply → pytest → re-render + re-score → commit-only-if-no-regression-else-revert
+  (v1 committed on pytest-green alone, the plateau cause). Judge's COVER_PAGE/FADE_STEPS-offering meta
+  reference replaced by `CONSTRAINTS_TO_PRESERVE` (frozen header, never editable).
+  `tests/harness/test_regression_gate.py` proves blanked-PDF→revert, improvement→commit,
+  frozen-header-in-constraints (fast via injected fakes).
 
 ## Dead ends / superseded / findings
 
-- The pre-rebuild harness ("run-11 / run_harness 20 iters") is ABANDONED — Step 9 rebuilds it fresh.
-  Do NOT run `/run-harness` (stale until Step 9); its launcher was deleted.
+- `/run-harness` skill is still STALE (references the v1 harness layout) — the rebuilt harness is
+  `tests/harness/` (judge/scorer/applier); the skill needs updating before it can drive Step 10.
 - llama-server retired; `/api/status` still reports a vestigial `llama_server_ok` (no path uses it).
-- **PERF: image path ~17 min/request** — `ImageShaper._load_pipeline` runs `from_pretrained`
-  (7.64 GB) on EVERY request. Caching the pipeline as a module singleton is the obvious fix.
+- **PERF: image path ~17 min/request** — `ImageShaper._load_pipeline` runs `from_pretrained` (7.64 GB)
+  EVERY request. Cache the pipeline as a module singleton (the obvious fix; near-prereq for a usable
+  image-eval calibration in Step 10).
 
 ## Critical gotchas
 
@@ -39,24 +39,26 @@ real services). 273 clean-gate tests, 0 type, 0 lint. The next unit of work is S
   Bash tool does NOT inherit it — load in PowerShell). No GPU.
 - Clean gate: `uv run pytest -q --ignore=tests/integration`. Integration gate (slow, real services):
   `$env:BRICKOMANCER_INTEGRATION="1"; uv run pytest tests/integration/ -v -s` (PATH += LPub3D, token loaded).
-- Server: `uv run uvicorn --app-dir src brickomancer.main:app` (no `--reload`).
+- Harness gate logic is in `tests/harness/applier.py`; `render_and_score` (the slow real path) is in
+  `tests/harness/scorer.py` — injectable, so the regression-gate test stays fast.
 
 ## Key files
 
-- `documentation/rebuild-plan.md` § Step 9 — next spec: rebuild the harness so the commit gate is
-  rendered-output **score regression** (re-render + re-score with an LLM judge, not pytest alone);
-  fixed eval set; frozen meta header in `constraints_to_preserve`. Done-when = a regression-gate test.
-- `docs/investigations/rebuild/02-plateau-postmortem.md` + `03-better-approaches.md` §4 — why the
-  gate must re-render, not trust pytest.
-- `docs/rebuild_reference/` — archived v1 harness reference (for rebuilding fresh).
+- `documentation/rebuild-plan.md` § Step 10 — next spec: run the harness ~5 iters on the eval set,
+  confirm `avg_raw` trends up (v1 was flat 3.5–5.1), record in
+  `docs/investigations/rebuild/05-calibration-result.md`. `Type: wait` (operator-run, long).
+- `tests/harness/{judge,scorer,applier}.py` — the rebuilt harness to drive the calibration loop.
+- `docs/investigations/rebuild/02-plateau-postmortem.md` — why the gate must re-render.
 
 ## Next Action
 
-Start **Phase 4 Step 9 (#58)** — render-scoring harness with a regression gate. Then Step 10
-(calibration run, `Type: wait`). Read `documentation/rebuild-plan.md` § Step 9.
+Start **Phase 4 Step 10 (#59) — calibration run (`Type: wait`)**: drive the rebuilt harness for ~5
+iterations, confirm the score trend, write `05-calibration-result.md`. Operator-run / long. Recommend
+either the ImageShaper pipeline-caching perf fix first OR run calibration on the text eval set (image
+is ~17 min/item). The `/run-harness` skill needs updating to the new `tests/harness/` layout first.
 
 ## Pending (operator-gated / optional)
 
-- Step 5 **live star-survival** check (top-down ≥4 protrusions on the real model) — model now
-  installed, so runnable; but the image path is ~17 min/run.
-- **ImageShaper pipeline-caching perf fix** (the ~17 min/request finding above).
+- **ImageShaper pipeline-caching perf fix** (~17 min/request finding) — near-prereq for image-eval calibration.
+- Step 5 **live star-survival** check (top-down ≥4 protrusions) — model installed, runnable (~17 min/run).
+- Update the `/run-harness` skill to the rebuilt `tests/harness/` layout (Step 10 driver).

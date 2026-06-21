@@ -86,8 +86,10 @@ distillation: [`docs/investigations/rebuild/`](docs/investigations/rebuild/). Gi
 step issues #47-#59 (namespaced "Rebuild —"). The old v1 harness was REMOVED in Phase 1 (rebuilt
 fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
 
-**Progress: Phase 0 + Phase 1 + Phase 2 Steps 3 & 4 + Phase 3 COMPLETE (Steps 5–8).** 273 tests
-passing, 0 type errors, 0 lint violations. Both input paths render end-to-end (smoke-verified).
+**Progress: Phase 0 + Phase 1 + Phase 2 + Phase 3 COMPLETE (Steps 5–8) + Phase 4 Step 9 DONE.**
+277 tests passing, 0 type errors, 0 lint violations. Both input paths render end-to-end
+(smoke-verified); the render-score regression gate is built + tested. Only Step 10 (calibration
+`wait`) remains.
 - **Phase 0:** Hunyuan3D-2mini chosen for image→3D (TripoSG install-blocked on Windows). **Toolchain
   finding: `INSERT COVER_PAGE` crashes LPub3D 2.4.9 → the frozen instruction header is BOM-only**
   (no cover page; render-verified).
@@ -137,12 +139,19 @@ passing, 0 type errors, 0 lint violations. Both input paths render end-to-end (s
   **PERF FINDING:** the image path is ~17 min/request — `ImageShaper._load_pipeline` runs
   `from_pretrained` (7.64 GB) on EVERY request (no cached pipeline). Caching it as a module singleton
   is the obvious fix (deferred; ImageShaper perf follow-up).
+- **Phase 4 Step 9 (#58):** rebuilt `tests/harness/` (judge / scorer / applier) with the **render-score
+  regression gate** — apply → pytest → **re-render + re-score** → commit-only-if-no-regression-else-revert
+  (v1 committed on pytest-green alone — the plateau cause). The judge's v1 COVER_PAGE/FADE_STEPS-offering
+  meta reference is replaced by `CONSTRAINTS_TO_PRESERVE` (frozen BOM-only header, never editable).
+  `tests/harness/test_regression_gate.py` (fast via injected fakes) proves blanked-PDF→revert,
+  improvement→commit, frozen-header-in-constraints. Full unattended loop = Step 10.
 
-**Next action: Phase 4 Step 9 (#58)** — rebuild the harness so the commit gate is **rendered-output
-score regression** (re-render + re-score the PNG/PDF with an LLM judge, not pytest alone); hold a
-fixed eval set; the frozen meta header goes in `constraints_to_preserve`. Then Step 10 (calibration
-run, `Type: wait`). **Also pending (operator, optional):** the Step 5 live star-survival check
-(top-down ≥4 protrusions) and the ImageShaper pipeline-caching perf fix.
+**Next action: Phase 4 Step 10 (#59) — calibration run (`Type: wait`).** Run the rebuilt harness for
+~5 iterations on the eval set, confirm `avg_raw` trends up (v1 was flat 3.5–5.1), record the trajectory
+in `docs/investigations/rebuild/05-calibration-result.md`. This is operator-run, long-running
+observation (build-phase would halt on it by the wait-step contract). **NOTE:** the image eval path is
+~17 min/item — either do the **ImageShaper pipeline-caching perf fix first** or run calibration on the
+text eval set. **Also pending (operator, optional):** the Step 5 live star-survival check.
 
 **`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as a Windows user environment variable (not `.env`). Load in
 PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`.
