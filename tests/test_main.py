@@ -82,26 +82,17 @@ def test_generate_from_image_missing_body_returns_422(client: TestClient) -> Non
 # form, model-unavailable 503) is covered in tests/test_generate_from_image_route.py.
 
 
-def test_generate_from_text_stub_returns_503(client: TestClient) -> None:
-    """POST /api/generate/from-text with a valid body returns the Phase-1 503 stub.
-
-    The v1 text_pipeline was removed in Phase 1 Step 1; the TextShaper lands in
-    Step 6. Until then a well-formed request returns 503 (not a crash / 500).
-    """
-    response = client.post(
-        "/api/generate/from-text",
-        json={"description": "a blue birthday cake"},
-    )
-    assert response.status_code == 503
-    assert "Shaper" in response.json()["detail"]
+# NOTE: the from-text route is no longer a 503 stub as of Phase 3 Step 6 -- it is
+# wired through TextShaper. Its end-to-end behavior (mocked-subprocess success and
+# unusable-output 503) is covered in tests/test_generate_from_text_route.py.
 
 
 def test_generate_from_text_missing_description_returns_422(client: TestClient) -> None:
     """POST /api/generate/from-text with no description returns 422 (validation).
 
-    Symmetric to the from-image missing-body check: the stub preserves the
-    GenerateTextRequest schema, so a body missing the required ``description``
-    is a 422 (validation), not the 503 stub.
+    FastAPI validates the GenerateTextRequest body before the handler runs, so a
+    body missing the required ``description`` is a 422 (validation), reached before
+    TextShaper is ever constructed.
     """
     response = client.post("/api/generate/from-text", json={})
     assert response.status_code == 422

@@ -15,17 +15,14 @@ from brickomancer.models.schemas import (
 from brickomancer.services import color_service, piece_detector, suggestion_service
 from brickomancer.services.image_shaper import ImageShaper, ModelUnavailableError
 from brickomancer.services.instruction_service import ToolUnavailableError, generate_pdf
+from brickomancer.services.text_shaper import TextShaper, TextShaperError
 from brickomancer.utils.temp_dir import TMP_DIR
 
 router = APIRouter()
 
-# Phase 1 Step 1: the v1 shape pipelines were removed. The text path (Llama
-# text_pipeline) is replaced by the TextShaper in Step 6, so /from-text returns 503
-# until then. The image path was rebuilt in Step 5 (3D-model ImageShaper, below).
-_SHAPER_PENDING = (
-    "Shape generation is being rebuilt: the text Shaper seam and its "
-    "implementation land in Phase 3 (Step 6). This route returns 503 until then."
-)
+# The text path has no source image to sample, so the build color is defaulted
+# (the Shaper seam is geometry-only). LEGO bright red is a sensible neutral default.
+_DEFAULT_TEXT_COLOR_HEX = "#C91A09"
 
 
 @router.post("/api/generate/from-image")
@@ -89,10 +86,34 @@ async def generate_from_image(
 async def generate_from_text(request: GenerateTextRequest) -> GenerateResponse:
     """Generate LEGO suggestions from a text description.
 
-    Temporarily stubbed (Phase 1 Step 1): the v1 Llama ``text_pipeline`` was removed.
-    The ``TextShaper`` lands in Step 6. Returns 503 until the Shaper seam is wired.
+    Phase 3 Step 6: the description is run through ``TextShaper`` (a Claude CLI
+    subprocess emits a sparse voxel occupancy), colored with a default brick color
+    (the seam is geometry-only — text carries no source image), and packed into the
+    three suggestion tiers. Returns 503 (not 500) when the Claude CLI is unavailable
+    or never returns a usable voxel model.
     """
-    raise HTTPException(status_code=503, detail=_SHAPER_PENDING)
+    request_id = str(uuid.uuid4())
+    tmp_path = TMP_DIR / request_id
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    # Shape: description -> Claude CLI sparse occupancy -> voxels. A CLI failure or
+    # unusable model output (after retries) is a 503.
+    try:
+        grid = TextShaper(request.description).to_voxels()
+    except TextShaperError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    # Default the build color (geometry-only seam; no source image for text).
+    colors = [color_service.match_color(_DEFAULT_TEXT_COLOR_HEX)]
+
+    try:
+        suggestions = suggestion_service.generate_suggestions(
+            grid, colors, tmp_path, request_id
+        )
+    except RuntimeError as exc:  # e.g. LDView not on PATH (run_ldview)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return GenerateResponse(suggestions=suggestions)
 
 
 @router.post("/api/generate/instructions")
