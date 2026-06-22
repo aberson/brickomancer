@@ -1,21 +1,22 @@
 # Task State — Brickomancer
 
-**Task:** Brickomancer rebuild — Phase 4 Step 10: calibration run (harness hill-climb)
-**Status:** ACTIVE — switched to Step 10 (calibration, `Type: wait`, #59). Phases 0–3 + Step 9 shipped (277 tests).
-**Last written:** 2026-06-21T06:10:00Z
-**Session SHA:** 2d0d3fa
+**Task:** Brickomancer rebuild — ImageShaper pipeline-caching perf fix (Step 10 prereq #1)
+**Status:** ACTIVE — perf fix in progress. Phases 0–3 + Phase 4 Step 9 shipped (277 tests).
+**Last written:** 2026-06-22T00:00:00Z
+**Session SHA:** 285f02a
 
 ## Current WIP
 
-**Active task: Phase 4 Step 10 — calibration run** (`Type: wait`, #59): drive the rebuilt harness
-~5 iterations on the eval set, confirm `avg_raw` trends up (v1 was flat 3.5–5.1), record the trajectory
-in `docs/investigations/rebuild/05-calibration-result.md`. This is long, operator-run observation —
-build-phase would halt on it by the wait-step contract.
+**Active task: ImageShaper pipeline-caching perf fix** — `ImageShaper._load_pipeline` calls
+`Hunyuan3DDiTFlowMatchingPipeline.from_pretrained` (7.64 GB) on EVERY request, so the image path is
+~17 min/item (Step 8 smoke measured 1019 s). Fix: load the pipeline ONCE and cache it
+(module-level `lru_cache`), so repeat requests / the Step 10 harness eval loop pay the load cost only
+once. Add a test proving the loader runs once across multiple `_load_pipeline()` calls (no hy3dgen
+import needed — patch an injected constructor). Don't cache failures (lru_cache doesn't cache raises).
 
-**Two prereqs before a useful calibration run:** (1) the **ImageShaper pipeline-caching perf fix** —
-image eval is ~17 min/item without it (caches `from_pretrained` as a module singleton); (2) the
-**`/run-harness` skill** still assumes the v1 harness layout and must be updated to drive the rebuilt
-`tests/harness/` (judge/scorer/applier). Until both land, calibration can only run on the text eval set.
+**Parent task: Phase 4 Step 10 — calibration run** (`Type: wait`, #59): once this perf fix + the
+`/run-harness` skill update land, drive the harness ~5 iters on the eval set, confirm `avg_raw` trends
+up (v1 flat 3.5–5.1), record in `docs/investigations/rebuild/05-calibration-result.md`. Operator-run/long.
 
 ## Completed (recent)
 
