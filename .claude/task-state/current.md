@@ -1,22 +1,22 @@
 # Task State — Brickomancer
 
-**Task:** Brickomancer rebuild — ImageShaper pipeline-caching perf fix (Step 10 prereq #1)
-**Status:** ACTIVE — perf fix in progress. Phases 0–3 + Phase 4 Step 9 shipped (277 tests).
-**Last written:** 2026-06-22T00:00:00Z
-**Session SHA:** 285f02a
+**Task:** Brickomancer rebuild — Phase 4 Step 10: calibration run (one prereq left)
+**Status:** ACTIVE — Step 10. Perf-fix prereq #1 DONE; prereq #2 (`/run-harness` skill update) remains.
+**Last written:** 2026-06-22T00:25:00Z
+**Session SHA:** f471412
 
 ## Current WIP
 
-**Active task: ImageShaper pipeline-caching perf fix** — `ImageShaper._load_pipeline` calls
-`Hunyuan3DDiTFlowMatchingPipeline.from_pretrained` (7.64 GB) on EVERY request, so the image path is
-~17 min/item (Step 8 smoke measured 1019 s). Fix: load the pipeline ONCE and cache it
-(module-level `lru_cache`), so repeat requests / the Step 10 harness eval loop pay the load cost only
-once. Add a test proving the loader runs once across multiple `_load_pipeline()` calls (no hy3dgen
-import needed — patch an injected constructor). Don't cache failures (lru_cache doesn't cache raises).
+**Active task: Phase 4 Step 10 — calibration run** (`Type: wait`, #59): drive the rebuilt harness
+~5 iters on the eval set, confirm `avg_raw` trends up (v1 flat 3.5–5.1), record in
+`docs/investigations/rebuild/05-calibration-result.md`. Operator-run/long.
 
-**Parent task: Phase 4 Step 10 — calibration run** (`Type: wait`, #59): once this perf fix + the
-`/run-harness` skill update land, drive the harness ~5 iters on the eval set, confirm `avg_raw` trends
-up (v1 flat 3.5–5.1), record in `docs/investigations/rebuild/05-calibration-result.md`. Operator-run/long.
+**Prereq #1 (perf fix) — DONE** (`f471412`): the Hunyuan3D pipeline now loads at most once per process
+(`@lru_cache` over `_construct_pipeline`), so the Step 10 eval loop won't reload the 7.64 GB model per
+iteration. Unit-tested (loads once; failures not cached). NOTE: the wall-clock win wasn't re-measured
+live (a 2-request timing would cost ~17 min cold + a fast warm 2nd) — offered, not yet run.
+**Prereq #2 — REMAINING:** update the `/run-harness` skill (still v1-layout) to drive `tests/harness/`
+(judge/scorer/applier).
 
 ## Completed (recent)
 
@@ -28,6 +28,9 @@ up (v1 flat 3.5–5.1), record in `docs/investigations/rebuild/05-calibration-re
   reference replaced by `CONSTRAINTS_TO_PRESERVE` (frozen header, never editable).
   `tests/harness/test_regression_gate.py` proves blanked-PDF→revert, improvement→commit,
   frozen-header-in-constraints (fast via injected fakes).
+- **ImageShaper perf fix (#58 follow-up, `f471412`):** `_load_pipeline` is a module-level
+  `@lru_cache(maxsize=1)` over `_construct_pipeline` — the 7.64 GB model loads once/process, not per
+  request. 279 clean-gate tests. Packer + seam untouched.
 
 ## Dead ends / superseded / findings
 
