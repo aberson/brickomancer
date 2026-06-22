@@ -146,3 +146,41 @@ def test_degenerate_mesh_raises_model_unavailable() -> None:
 def test_model_unavailable_is_runtime_error() -> None:
     """Subclassing RuntimeError lets the route's RuntimeError handling catch it too."""
     assert issubclass(ModelUnavailableError, RuntimeError)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline caching (perf fix — load the 7.64 GB model at most once per process)
+# ---------------------------------------------------------------------------
+
+
+def test_load_pipeline_caches_construction() -> None:
+    """`_load_pipeline` constructs the pipeline at most once across calls (lru_cache)."""
+    import brickomancer.services.image_shaper as ish
+
+    sentinel = object()
+    ish._load_pipeline.cache_clear()
+    try:
+        with patch.object(ish, "_construct_pipeline", return_value=sentinel) as mock_ctor:
+            first = ish._load_pipeline()
+            second = ish._load_pipeline()
+        assert first is sentinel and second is sentinel
+        assert mock_ctor.call_count == 1, "the 7.64 GB pipeline must load only once"
+    finally:
+        ish._load_pipeline.cache_clear()  # don't leak the sentinel to other tests
+
+
+def test_failed_pipeline_load_is_not_cached() -> None:
+    """A failed load (no GPU / weights) is retried, not poisoned into the cache."""
+    import brickomancer.services.image_shaper as ish
+
+    ish._load_pipeline.cache_clear()
+    try:
+        with patch.object(
+            ish, "_construct_pipeline", side_effect=ModelUnavailableError("boom")
+        ) as mock_ctor:
+            for _ in range(2):
+                with pytest.raises(ModelUnavailableError):
+                    ish._load_pipeline()
+        assert mock_ctor.call_count == 2, "lru_cache must not cache the failure"
+    finally:
+        ish._load_pipeline.cache_clear()

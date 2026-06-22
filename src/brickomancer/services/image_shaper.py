@@ -33,6 +33,7 @@ it is intentionally out of scope for the automated gate.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -60,6 +61,44 @@ class ModelUnavailableError(RuntimeError):
     ``RuntimeError -> 503`` handling catches it even if a future caller forgets
     to handle it explicitly. The route catches it by name for a clear 503.
     """
+
+
+def _construct_pipeline() -> Any:
+    """Import Hunyuan3D and load the shape pipeline; map any failure to ModelUnavailable.
+
+    The shape-only pipeline skips the C++/CUDA texture extensions, which is why it
+    installs cleanly on Windows (Phase-0 finding). Weights download once from Hugging
+    Face on first use, then live in the HF cache.
+    """
+    try:
+        from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
+    except ImportError as exc:
+        raise ModelUnavailableError(
+            "Hunyuan3D (hy3dgen) is not installed. Install it into the "
+            "project environment to enable the image build path."
+        ) from exc
+
+    try:
+        return Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+            _MODEL_REPO, subfolder=_MODEL_SUBFOLDER
+        )
+    except Exception as exc:  # weights missing / HF unreachable / load error
+        raise ModelUnavailableError(
+            f"Failed to load Hunyuan3D weights ({_MODEL_REPO}): {exc}"
+        ) from exc
+
+
+@lru_cache(maxsize=1)
+def _load_pipeline() -> Any:
+    """Return the Hunyuan3D pipeline, loading it AT MOST ONCE per process.
+
+    The 7.64 GB model load dominates image wall-clock (~17 min/request when loaded
+    every call — Step 8 smoke). Caching it as a process singleton means repeat requests
+    and the Step 10 harness eval loop pay the load cost only once. ``lru_cache`` does NOT
+    cache exceptions, so a failed load (no GPU / weights) is retried on the next call
+    rather than poisoning the cache.
+    """
+    return _construct_pipeline()
 
 
 class ImageShaper(Shaper):
@@ -122,7 +161,7 @@ class ImageShaper(Shaper):
                 "torch wheel will not work."
             )
 
-        pipeline = self._load_pipeline()
+        pipeline = _load_pipeline()
         subject = self._remove_background()
 
         try:
@@ -134,31 +173,6 @@ class ImageShaper(Shaper):
 
         mesh = output[0] if isinstance(output, (list, tuple)) else output
         return self._as_trimesh(mesh)
-
-    @staticmethod
-    def _load_pipeline() -> Any:
-        """Load the Hunyuan3D shape pipeline; map any failure to ModelUnavailable.
-
-        The shape-only pipeline skips the C++/CUDA texture extensions, which is
-        why it installs cleanly on Windows (Phase-0 finding). Weights download
-        once from Hugging Face on first use.
-        """
-        try:
-            from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
-        except ImportError as exc:
-            raise ModelUnavailableError(
-                "Hunyuan3D (hy3dgen) is not installed. Install it into the "
-                "project environment to enable the image build path."
-            ) from exc
-
-        try:
-            return Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-                _MODEL_REPO, subfolder=_MODEL_SUBFOLDER
-            )
-        except Exception as exc:  # weights missing / HF unreachable / load error
-            raise ModelUnavailableError(
-                f"Failed to load Hunyuan3D weights ({_MODEL_REPO}): {exc}"
-            ) from exc
 
     def _remove_background(self) -> Any:
         """Open the input image and strip its background via rembg (salvaged v1 step)."""
