@@ -136,9 +136,10 @@ fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
   clean; `tests/integration/test_smoke.py` rebuilt to exercise BOTH paths + instructions through the
   **real** services (TestClient, nothing mocked), gated on `BRICKOMANCER_INTEGRATION=1`. Smoke PASSED:
   from-text 73 s, **from-image (real Hunyuan3D) 1019 s (~17 min)**, instructions PDF 9 s.
-  **PERF FINDING:** the image path is ~17 min/request — `ImageShaper._load_pipeline` runs
-  `from_pretrained` (7.64 GB) on EVERY request (no cached pipeline). Caching it as a module singleton
-  is the obvious fix (deferred; ImageShaper perf follow-up).
+  **PERF FINDING (RESOLVED, f471412):** the image path *was* ~17 min/request — `ImageShaper._load_pipeline` runs
+  `from_pretrained` (7.64 GB) on EVERY request (no cached pipeline). It is now cached process-wide:
+  `_load_pipeline` is decorated `@lru_cache(maxsize=1)` (landed f471412), so only the first request
+  per process pays the 7.64 GB load.
 - **Phase 4 Step 9 (#58):** rebuilt `tests/harness/` (judge / scorer / applier) with the **render-score
   regression gate** — apply → pytest → **re-render + re-score** → commit-only-if-no-regression-else-revert
   (v1 committed on pytest-green alone — the plateau cause). The judge's v1 COVER_PAGE/FADE_STEPS-offering
@@ -150,8 +151,9 @@ fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
 ~5 iterations on the eval set, confirm `avg_raw` trends up (v1 was flat 3.5–5.1), record the trajectory
 in `docs/investigations/rebuild/05-calibration-result.md`. This is operator-run, long-running
 observation (build-phase would halt on it by the wait-step contract). **NOTE:** the image eval path is
-~17 min/item — either do the **ImageShaper pipeline-caching perf fix first** or run calibration on the
-text eval set. **Also pending (operator, optional):** the Step 5 live star-survival check.
+~17 min/item — but that ~17 min is the one-time 7.64 GB model load, cached process-wide since f471412 (not
+paid per item); run calibration on the text eval set to stay fastest. **Also pending (operator,
+optional):** the Step 5 live star-survival check (now scriptable via `scripts/step5_star_survival_uat.py`).
 
 **`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as a Windows user environment variable (not `.env`). Load in
 PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`.
@@ -164,7 +166,7 @@ The Bash tool does NOT inherit Windows user env vars.
 
 - Windows 11, Python 3.12+, uv, Node.js 20+
 - Text path uses the **Claude CLI** (`claude -p` via `CLAUDE_CODE_OAUTH_TOKEN`) — no llama-server, no GPU. The v1 llama-server text path is retired.
-- **Image path requires a CUDA GPU + Hunyuan3D-2mini in the project venv** (rembg → Hunyuan3D → voxelize); `/api/generate/from-image` returns a clean 503 if torch/CUDA/`hy3dgen`/weights are unavailable. `hy3dgen` is now installed (editable, from `C:\Tools\hunyuan-src` via `uv pip install -e`; NOT in `pyproject`/lock, so fresh worktrees won't have it — run build steps in-place). Weights cached in the HF cache (`~/.cache/huggingface`). **The image path is ~17 min/request** (per-request `from_pretrained` of the 7.64 GB model — caching the pipeline is a known perf follow-up). One `uv pip check` warning: `typer 0.26.7` vs `huggingface-hub<0.26.0` — benign (CLI-only; our path uses the `from_pretrained` API)
+- **Image path requires a CUDA GPU + Hunyuan3D-2mini in the project venv** (rembg → Hunyuan3D → voxelize); `/api/generate/from-image` returns a clean 503 if torch/CUDA/`hy3dgen`/weights are unavailable. `hy3dgen` is now installed (editable, from `C:\Tools\hunyuan-src` via `uv pip install -e`; NOT in `pyproject`/lock, so fresh worktrees won't have it — run build steps in-place). Weights cached in the HF cache (`~/.cache/huggingface`). **The image path's first request is ~17 min** (a one-time `from_pretrained` load of the 7.64 GB model — the pipeline is now cached process-wide via `@lru_cache(maxsize=1)` since f471412, so later requests in the same process are inference-only). One `uv pip check` warning: `typer 0.26.7` vs `huggingface-hub<0.26.0` — benign (CLI-only; our path uses the `from_pretrained` API)
 - LDView auto-detected at `C:\Tools\LPub3D\3rdParty\ldview-4.5\bin\LDView64.exe` (no PATH needed)
 - LPub3D on PATH (`$env:PATH += ";C:\Tools\LPub3D"`) before starting server
 - `CLAUDE_CODE_OAUTH_TOKEN` as Windows user environment variable (not `.env`; inherited by `.bat` launcher; load manually in PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`)

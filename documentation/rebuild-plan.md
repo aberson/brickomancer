@@ -324,8 +324,9 @@ spike shows TripoSG installs cleanly and renders better.
   type, 0 lint; packer + `Shaper.to_voxels` untouched. **FINDING — image path ~17 min/request:**
   `ImageShaper._load_pipeline` runs `from_pretrained` (7.64 GB) on EVERY request (no cached pipeline)
   + rembg first-run + 3-tier pack + 3 LDView renders. Caching the loaded pipeline as a module
-  singleton is the obvious fix (drops repeat requests toward inference-only ~100 s) — deferred as an
-  ImageShaper perf follow-up (out of Step 8 scope; Step 8 = frontend + smoke).
+  singleton is the obvious fix (drops repeat requests toward inference-only ~100 s). RESOLVED in
+  f471412: `_load_pipeline` is now decorated `@lru_cache(maxsize=1)`, so only the first request per
+  process pays the 7.64 GB load (landed after Step 8; the ~17 min figure above is first-request-only).
 
 ---
 
