@@ -28,7 +28,7 @@ Local-first personal tool. Python/FastAPI backend + React frontend. Clean REST A
 - `claude` CLI on PATH with `CLAUDE_CODE_OAUTH_TOKEN` set (text path — `claude -p` sparse-voxel emit; no GPU, no llama-server)
 - `LDView` on PATH (`LDView --version` or `ldview --version` works)
 - `LPub3D` on PATH (`lpub3d -?` works)
-- **Image path:** a CUDA GPU + Hunyuan3D-2mini installed in the project venv. `POST /api/generate/from-image` returns a clean 503 if torch/CUDA/`hy3dgen`/weights are unavailable. (Currently installed only in the throwaway spike venv `C:\Tools\spike3d`.)
+- **Image path:** a CUDA GPU + Hunyuan3D-2mini installed in the project venv. `POST /api/generate/from-image` returns a clean 503 if torch/CUDA/`hy3dgen`/weights are unavailable. `hy3dgen` is installed **editable** into the project venv and is deliberately **not** in `pyproject`/lock, so a fresh checkout won't have it — see the image-path step under [Setup](#setup).
 - `CLAUDE_CODE_OAUTH_TOKEN` set as a **Windows user environment variable** (not `.env`); load in PowerShell via `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`
 
 ## Setup
@@ -38,6 +38,14 @@ uv sync
 cd frontend; npm install; cd ..
 uv run python scripts/download_data.py   # downloads ~50 MB of Rebrickable CSVs + LDConfig.ldr
 ```
+
+**Image path (optional — needs a CUDA GPU).** `hy3dgen` (Hunyuan3D-2mini) is installed **editable** and is deliberately **not** in `pyproject`/lock, so `uv sync` above won't pull it. Install it into the project venv from the local Hunyuan3D-2 checkout:
+
+```powershell
+uv pip install -e C:\Tools\hunyuan-src   # shape-only editable install; NOT in pyproject/lock
+```
+
+For a clean-machine reproduction (cu118 torch pin, weights, from-scratch clone), follow the [reproducible install note](docs/investigations/rebuild/04-model-spike-result.md#reproducible-install-what-actually-worked).
 
 ## Run
 
