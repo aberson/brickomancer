@@ -9,7 +9,11 @@ BOM-only header is a hard ``CONSTRAINTS_TO_PRESERVE`` entry the judge may never 
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from brickomancer.services.ldraw_writer import _BOM_META
+from tests.harness._claude import HarnessLLMUnavailable, run_claude
 
 # Dimension -> source file(s) the judge may target. Updated to the rebuilt modules
 # (v1's image_pipeline/text_pipeline are gone; shapers replace them).
@@ -90,3 +94,55 @@ def build_judge_prompt(report_text: str, history_text: str) -> str:
         '"functions_to_modify": [], "constraints_to_preserve": [], '
         '"anti_patterns_to_avoid": [], "blocking_issues": [], "confidence": <0.0-1.0>}'
     )
+
+
+_REQUIRED_FIELDS = {"dimension", "file_path", "approach_description"}
+
+
+def _parse_decision(output: str) -> dict[str, Any] | None:
+    """Extract + validate the judge's JSON decision (whole output, then brace-scan)."""
+    candidates = [output]
+    start, end = output.find("{"), output.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(output[start : end + 1])
+    valid_paths = {p for paths in DIMENSION_SOURCE_FILES.values() for p in paths}
+    for text in candidates:
+        try:
+            parsed = json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(parsed, dict) or not _REQUIRED_FIELDS.issubset(parsed):
+            continue
+        file_path = str(parsed["file_path"])
+        # Refuse a file the judge is not allowed to touch — a hard guard on top of the
+        # prompt's constraint block (the judge picks the file; the applier gate + these
+        # bounds keep it inside the sanctioned surface).
+        if file_path not in valid_paths:
+            continue
+        return {
+            "dimension": str(parsed["dimension"]),
+            "file_path": file_path,
+            "rationale": str(parsed.get("rationale", "")),
+            "approach_description": str(parsed["approach_description"]),
+            "blocking_issues": [str(b) for b in parsed.get("blocking_issues", [])],
+        }
+    return None
+
+
+def judge(
+    report_text: str,
+    history_text: str,
+    *,
+    run_claude_fn: Any = run_claude,
+) -> dict[str, Any] | None:
+    """Ask claude to pick the next change; return a validated decision or None.
+
+    None (LLM unavailable / unparseable / out-of-bounds file) makes the loop skip the
+    iteration rather than act on a malformed decision.
+    """
+    prompt = build_judge_prompt(report_text, history_text)
+    try:
+        output = run_claude_fn(prompt)
+    except HarnessLLMUnavailable:
+        return None
+    return _parse_decision(output)
