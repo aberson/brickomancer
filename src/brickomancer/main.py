@@ -100,7 +100,10 @@ def _check_ldview_available() -> bool:
 @app.get("/api/status")
 async def status() -> dict:
     """Return service health status."""
-    # Check llama-server
+    # Vestigial: the v1 Llama text path was retired -- text shaping now uses the Claude CLI
+    # subprocess, so no request path depends on this probe. It is kept only because /api/status
+    # still reports llama_server_ok for the frontend/UAT #13 contract; do not remove without
+    # updating that contract (guarded by tests/test_main.py).
     llama_ok = False
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
