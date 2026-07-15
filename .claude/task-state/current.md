@@ -1,11 +1,22 @@
 # Task State — Brickomancer
 
-**Task:** Brickomancer rebuild — Phase 4 Step 10 calibration (blocked by a scorer crash found this session)
-**Status:** ACTIVE — Step 10 still pending. This session shipped 2 goblin-overlap improvements (pushed) and surfaced 2 HIGH findings; the scorer crash BLOCKS the Step 10 calibration until fixed.
-**Last written:** 2026-07-14T17:58:24Z
-**Session SHA:** 458a09c
+**Task:** Brickomancer rebuild — COMPLETE (all 10 steps; Step 10 calibration observed 2026-07-15)
+**Status:** DONE — the full rebuild is complete. Step 10 built the harness run-loop + ran a real 3-iter calibration (flat `avg_raw 8.25→8.25`, 0 committed — the `wait` observation done-when). 285 pytest, 0 mypy, 0 ruff. No rebuild step remains; only optional follow-ups.
+**Last written:** 2026-07-15T18:35:00Z
+**Session SHA:** d2b6438
 
-## Current WIP
+## Rebuild complete — optional follow-ups (none blocking)
+
+1. **Fix the harness developer step (highest leverage)** — `tests/harness/developer.py` round-trips
+   the whole source file through a single-line JSON `content` string; fragile for a ~1000-line file
+   (`claude -p` returns prose + a code-fence) → `SKIPPED_DEV` every calibration iter, so the loop never
+   hill-climbs. Switch to a diff/patch or file-write edit. (Root cause in
+   `docs/investigations/rebuild/05-calibration-result.md`; the judge already reasons correctly.)
+2. Step 5 **live star-survival** check (`scripts/step5_star_survival_uat.py`, operator/GPU).
+3. Update the **`/run-harness` skill** (still v1-layout) to drive `tests/harness/` (judge/scorer/applier/loop).
+4. Parked medium/low goblin-scan findings (piece-detection no-op, dead v1 types, doc/test-count drift).
+
+## Current WIP (superseded — kept for provenance)
 
 **This session (goblin-overlap improvement pass):** ran an independent 5-lens weakness scan of
 brickomancer IN PARALLEL with `/goblin-suggest --small`, then acted on the OVERLAP (items both flagged):
@@ -22,6 +33,17 @@ crash** (the harness `render_and_score` throws before scoring the first eval ite
 
 ## Completed (recent)
 
+- **HIGH fix #1 — scorer crash RESOLVED (`4b9dd19`, pushed):** `tests/harness/scorer.py:79` passed the
+  nx.Graph into `connected_component_count(placements)` (which re-runs `build_connectivity_graph` on its
+  arg) → AttributeError on the first eval item, crashing every Step 10 run. Extracted the structural half
+  into `_score_structure(placements)` (no render) + added `tests/harness/test_scorer.py` (real packer:
+  solid-cube→10.0 / empty→3.0) to close the mock-theater gap (all harness tests inject a fake
+  `render_and_score`, so the real block never ran). **Unblocks Step 10.**
+- **HIGH fix #2 — vite proxy RESOLVED (`59f3d38`, pushed):** `frontend/vite.config.ts` proxied
+  `/api`+`/static` to `:8001`; backend is `:8000` → wizard ECONNREFUSED out of the box. Both targets → `:8000`.
+- **Goblin housekeeping (this session, gitignored brain):** `goblin-do sugg-…-hy3dgen-editable-install-step`
+  was already done (closed by `4745f5e`); marked the near-duplicate `sugg-…-hy3dgen-editable-install` →
+  accepted (covered by `4745f5e`, provenance recorded). No brickomancer source touched by that pass.
 - **Goblin-overlap ship #1 (`54df7dd`):** reconciled the ImageShaper pipeline-caching doc drift. The
   `@lru_cache(maxsize=1)` singleton already landed in `f471412`, but CLAUDE.md (×3), rebuild-plan Step 8,
   and README still called it a "deferred" Step 10 prerequisite. Fixed all; grep confirms zero stale
@@ -39,16 +61,16 @@ crash** (the harness `render_and_score` throws before scoring the first eval ite
 
 ## Dead ends / superseded / findings
 
-- **HIGH — harness scorer crashes on every eval item (`tests/harness/scorer.py:79`).** VERIFIED: line 78
+- **HIGH — RESOLVED (`4b9dd19`, pushed). Was: harness scorer crashed on every eval item (`tests/harness/scorer.py:79`).** VERIFIED (pre-fix): line 78
   binds `graph = build_connectivity_graph(placements)` then line 79 calls
   `connected_component_count(graph)`, but `connected_component_count(placements: list[BrickPlacement])`
   (brick_packer.py:492) re-runs `build_connectivity_graph` on its arg → iterating an nx.Graph yields
   node-key tuples → `.x` AttributeError. Line-78 binding is dead. Invisible because every harness test
   injects a fake `render_and_score`. **Blocks Step 10 calibration.** Fix: `connected_component_count(placements)`,
   delete the dead line-78 binding. (~1-line fix + a `_score_pdf`/real-scorer smoke to close the mock-theater gap.)
-- **HIGH — Vite dev proxy points at the wrong port (`frontend/vite.config.ts:11,15`).** Proxies `/api`
+- **HIGH — RESOLVED (`59f3d38`, pushed). Was: Vite dev proxy pointed at the wrong port (`frontend/vite.config.ts:11,15`).** Proxied `/api`
   and `/static` to `localhost:8001`, but the backend runs on 8000 (CLAUDE.md:31, README). The whole
-  wizard ECONNREFUSEDs out of the box. Fix: both targets → `localhost:8000`.
+  wizard ECONNREFUSEDed out of the box. Fixed: both targets → `localhost:8000`.
 - **Caching finding — RESOLVED + doc-reconciled this session** (was: image path ~17 min/request). The
   `@lru_cache` singleton landed in `f471412`; docs corrected in `54df7dd`. The ~17 min is a one-time
   per-process model load; then inference-only.
@@ -99,13 +121,15 @@ crash** (the harness `render_and_score` throws before scoring the first eval ite
 
 ## Next Action
 
-Present the 2 HIGH findings to the operator and get their call:
-1. **Fix `tests/harness/scorer.py:79`** (pass `placements` not `graph`; drop the dead line-78 binding) —
-   unblocks the Step 10 calibration. Add a real-scorer smoke test to close the mock-theater gap.
-2. **Fix `frontend/vite.config.ts`** proxy 8001→8000 — the wizard is dead out of the box otherwise.
-If the operator greenlights, do both with narrow tests; then Step 10 calibration is unblocked (run on the
-text eval set to avoid the ~17 min/item image path). If not, the tracked task remains Step 10 (`Type: wait`,
-operator-run). Lower-severity scan findings are parked in § Findings.
+Both HIGH findings are FIXED + pushed (`4b9dd19` scorer, `59f3d38` vite; all gates green). Step 10 is now
+unblocked and is the only remaining rebuild step.
+
+**Step 10 (#59) — calibration run (`Type: wait`, operator-run):** run the rebuilt harness ~5 iters on the
+**text** eval set (avoid the ~17 min/item image path), confirm `avg_raw` trends up (v1 was flat 3.5–5.1),
+record the trajectory in `docs/investigations/rebuild/05-calibration-result.md`. The scorer now completes
+its structural block on real eval items (previously crashed there) — `_score_structure` is unit-covered, but
+the full `render_and_score` (LDView/LPub3D render half) is still only exercised live by this run. Run with
+`$env:PYTHONPATH="src"`. Lower-severity scan findings remain parked in § Findings.
 
 ## Pending (operator-gated / optional)
 

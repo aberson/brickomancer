@@ -86,10 +86,10 @@ distillation: [`docs/investigations/rebuild/`](docs/investigations/rebuild/). Gi
 step issues #47-#59 (namespaced "Rebuild —"). The old v1 harness was REMOVED in Phase 1 (rebuilt
 fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
 
-**Progress: Phase 0 + Phase 1 + Phase 2 + Phase 3 COMPLETE (Steps 5–8) + Phase 4 Step 9 DONE.**
-277 tests passing, 0 type errors, 0 lint violations. Both input paths render end-to-end
-(smoke-verified); the render-score regression gate is built + tested. Only Step 10 (calibration
-`wait`) remains.
+**Progress: REBUILD COMPLETE — all 10 steps done (Phases 0–4).** 285 tests passing, 0 type
+errors, 0 lint violations. Both input paths render end-to-end (smoke-verified); the render-score
+regression gate + the calibration loop are built and the calibration was run + observed. Step 10
+(calibration `wait`) is DONE — see the calibration-result note below.
 - **Phase 0:** Hunyuan3D-2mini chosen for image→3D (TripoSG install-blocked on Windows). **Toolchain
   finding: `INSERT COVER_PAGE` crashes LPub3D 2.4.9 → the frozen instruction header is BOM-only**
   (no cover page; render-verified).
@@ -146,14 +146,22 @@ fresh in Step 9; reference artifacts archived to `docs/rebuild_reference/`).
   meta reference is replaced by `CONSTRAINTS_TO_PRESERVE` (frozen BOM-only header, never editable).
   `tests/harness/test_regression_gate.py` (fast via injected fakes) proves blanked-PDF→revert,
   improvement→commit, frozen-header-in-constraints. Full unattended loop = Step 10.
+- **Phase 4 Step 10 (#59) — DONE (calibration observed, 2026-07-15):** built the missing run-loop
+  (`tests/harness/loop.py` `run_calibration` + `judge.judge()` LLM call + `developer.write_change()` +
+  `_claude.py`, dry-tested by `test_loop.py`). Ran a real 3-iter calibration on the text eval set:
+  **flat `avg_raw 8.25 → 8.25`, 0 committed, no dim hit 0, no oscillation** (the `wait` observation
+  done-when). **Finding (`docs/investigations/rebuild/05-calibration-result.md`):** the flat trajectory
+  is the **developer step**, not scorer saturation (`build_stability=3.0` has headroom) — it round-trips
+  the whole source file through a single-line JSON `content` string, fragile for a ~1000-line file →
+  `SKIPPED_DEV` every iter (claude returns prose + a code-fence, not strict JSON). Judge reasons
+  correctly about the real code. Zero source mutated.
 
-**Next action: Phase 4 Step 10 (#59) — calibration run (`Type: wait`).** Run the rebuilt harness for
-~5 iterations on the eval set, confirm `avg_raw` trends up (v1 was flat 3.5–5.1), record the trajectory
-in `docs/investigations/rebuild/05-calibration-result.md`. This is operator-run, long-running
-observation (build-phase would halt on it by the wait-step contract). **NOTE:** the image eval path is
-~17 min/item — but that ~17 min is the one-time 7.64 GB model load, cached process-wide since f471412 (not
-paid per item); run calibration on the text eval set to stay fastest. **Also pending (operator,
-optional):** the Step 5 live star-survival check (now scriptable via `scripts/step5_star_survival_uat.py`).
+**Next action: the rebuild is COMPLETE (all 10 steps).** No rebuild step remains. Optional follow-ups
+(none blocking): (1) **fix the harness developer step** — switch from a whole-file JSON round-trip to a
+diff/patch or file-write edit, so the calibration loop can actually hill-climb (the highest-leverage
+follow-up); (2) the Step 5 **live star-survival** check (`scripts/step5_star_survival_uat.py`, operator/
+GPU); (3) update the **`/run-harness` skill** (still v1-layout) to drive `tests/harness/`; (4) the
+parked medium/low scan findings in the goblin pass (piece-detection no-op, dead v1 types, doc drift).
 
 **`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as a Windows user environment variable (not `.env`). Load in
 PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`.
