@@ -384,6 +384,18 @@ spike shows TripoSG installs cleanly and renders better.
   occurred. A flat or declining trend is itself a valid, ship-worthy finding (it means the gate or
   judge needs tuning) — the step is "see what actually happens", not "force avg_raw up".
 - **Depends on:** Step 9
+- **Status:** DONE — observed (2026-07-15). Built the missing run-loop (Step 9 shipped only the
+  gate): `tests/harness/loop.py` (`run_calibration`: baseline → N×(judge → developer → apply_change
+  gate) → `scores.jsonl`), `judge.judge()` (the LLM call), `developer.write_change()`, `_claude.py`,
+  dry-tested by `test_loop.py`. Ran a real 3-iter calibration on the text eval set (branch
+  `calibration/step10`). **Result: flat `avg_raw 8.25 → 8.25`, 0 committed, no dim hit 0, no
+  oscillation** — the `Type: wait` observation done-when is met. **Root cause pinned (05-calibration-
+  result.md):** NOT scorer saturation (`build_stability=3.0` has headroom) — the **developer step**
+  round-trips the whole source file through a single-line JSON `content` string, which is fragile for
+  a ~1000-line file (`claude -p` returns prose + a code-fence, not strict JSON) → `SKIPPED_DEV` every
+  iter, so nothing ever applied. The judge reasons correctly about the real code. **Zero source
+  mutated.** Follow-up (not blocking): switch the developer to a diff/patch or file-write edit. See
+  `docs/investigations/rebuild/05-calibration-result.md`.
 
 ---
 

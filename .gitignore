@@ -39,3 +39,6 @@ frontend/node_modules/
 # OS
 .DS_Store
 Thumbs.db
+
+# Harness run log (per-run artifact; trajectory captured in docs/investigations/rebuild/05-calibration-result.md)
+tests/harness/scores.jsonl
