@@ -18,6 +18,11 @@ on top in Step 10 without changing the gate (which is score-source-agnostic).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from brickomancer.models.brick import BrickPlacement
+
 # The fixed eval set (text descriptions — fast enough to re-score each iteration; the
 # image path is correct but ~17 min/item, so it is opt-in for a calibration run).
 EVAL_SET: tuple[tuple[str, str], ...] = (
@@ -50,6 +55,26 @@ def _score_pdf(pdf_path: str) -> dict[str, float]:
     }
 
 
+def _score_structure(placements: list[BrickPlacement]) -> dict[str, float]:
+    """Deterministic structural scores from a packed brick grid (the fast, un-mocked half).
+
+    Packer connectivity + part variety -- no render needed. Extracted from
+    ``render_and_score`` so this real path is unit-testable without the slow render half
+    (LDView/LPub3D), which is what let a crash hide here: every regression-gate test
+    injects a fake ``render_and_score``, so this block never ran. Guards the crash class --
+    ``connected_component_count`` takes the placements list, NOT a connectivity graph.
+    """
+    from brickomancer.services import brick_packer
+
+    components = brick_packer.connected_component_count(placements)
+    unsupported = len(brick_packer.unsupported_bricks(placements))
+    distinct_parts = len({bp.part_id for bp in placements})
+    return {
+        "build_stability": 10.0 if components == 1 and unsupported == 0 else 3.0,
+        "part_variety": min(10.0, float(distinct_parts) * 2.0),
+    }
+
+
 def render_and_score(project_root: str) -> dict[str, float]:
     """Render the eval set and return averaged per-dimension scores (the slow real path).
 
@@ -75,12 +100,8 @@ def render_and_score(project_root: str) -> dict[str, float]:
 
         # build_stability + part_variety from the packed standard-tier grid
         placements = brick_packer.pack(grid, color_id=colors[0].color_id)
-        graph = brick_packer.build_connectivity_graph(placements)
-        components = brick_packer.connected_component_count(graph)
-        unsupported = len(brick_packer.unsupported_bricks(placements))
-        distinct_parts = len({bp.part_id for bp in placements})
-        totals["build_stability"].append(10.0 if components == 1 and unsupported == 0 else 3.0)
-        totals["part_variety"].append(min(10.0, float(distinct_parts) * 2.0))
+        for dim, val in _score_structure(placements).items():
+            totals[dim].append(val)
 
         # pdf_completeness + technical_validity from a real render
         request_id = str(uuid.uuid4())
