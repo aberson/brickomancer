@@ -42,3 +42,16 @@ Thumbs.db
 
 # Harness run log (per-run artifact; trajectory captured in docs/investigations/rebuild/05-calibration-result.md)
 tests/harness/scores.jsonl
+
+# Stray LDView POV export: run_ldview passes -ExportFile=1 with no cwd, so LDView writes a
+# POV-Ray scene literally named "1" into the process CWD (repo root). Root cause tracked
+# separately; this keeps the artifact out of the tree meanwhile.
+/1
+
+# Agent task-state scratch (current.md IS tracked as this repo's durable state; these are not)
+.claude/task-state/.checkpoint-nudge-stamp
+.claude/task-state/handoff-prompt.md
+.claude/task-state/*.pre-compact
+
+# /plan-expedite resume cache (transient; pointed at the superseded docs/harness-plan.md)
+.plan-expedite-state

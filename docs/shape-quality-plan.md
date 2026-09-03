@@ -1,5 +1,13 @@
 # Shape Quality Improvement Plan
 
+> **Superseded as a plan; one section still cited.** This is the v1 shape-quality plan; it targeted
+> `image_pipeline.py`'s silhouette+dome path, which the rebuild deleted in Phase 1 (the image path
+> is now `ImageShaper`, Step 5). Superseded 2026-07-15 by the full rebuild at commit `15f72e6`.
+> Its Step 4 (2x2 OR-pool downsample) is still the cited source for rebuild-plan Step 7's 3-tier
+> downsample. Do not delete this file.
+> **Plan of record: [`documentation/rebuild-plan.md`](../documentation/rebuild-plan.md)** - Steps 0.1-10, all DONE.
+> Do not read this file's own `**Status:**` markers as current project state.
+
 **Goal:** Raise `shape_fidelity` and `build_stability` raw scores from their current 2/10 and 1/10 baselines to ≥ 6/10 each by fixing the actual root causes identified in INV-7.
 
 **Background:** Three tests in `test_image_pipeline.py` have been blocking developer-agent axis-change proposals for two consecutive harness runs. Investigation (INV-7) shows the tests are correct — the axis changes were wrong. The real problems are (a) rembg producing near-empty alpha masks server-side, (b) compact-tier downsampling losing 75% of the silhouette, and (c) no integration test catching rembg sparsity. See `docs/investigations/INV-7-test-constraint-and-shape-quality.md`.

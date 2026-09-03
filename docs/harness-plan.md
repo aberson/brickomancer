@@ -1,5 +1,14 @@
 # Brickomancer — Instruction Quality Hill-Climbing Harness Plan
 
+> **Superseded as a plan; retained as the v1 harness record.** This is the v1 hill-climbing
+> harness plan (TripoSR-era pipeline, pytest-only commit gate). Superseded 2026-07-15 by the full
+> rebuild at commit `15f72e6`: the v1 harness was removed in rebuild Phase 1 and rebuilt in Step 9
+> with a render-score regression gate. No step of the rebuild plan depends on this file; it is
+> cited once, as reference-only, by `docs/investigations/rebuild/01-distillation.md`. Keep it for
+> its run-by-run v1 harness log; do not delete it.
+> **Plan of record: [`documentation/rebuild-plan.md`](../documentation/rebuild-plan.md)** - Steps 0.1-10, all DONE.
+> Do not read this file's own `**Status:**` markers as current project state.
+
 ## 1. What This Feature Does
 
 This feature adds a self-improving testing harness that iteratively improves the visual

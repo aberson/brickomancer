@@ -76,3 +76,27 @@ genuine packer headroom a working hill-climb would target.
   above before the loop can actually hill-climb.
 - **Zero source mutated** (0 committed), so nothing risky landed; the branch carries only the
   loop code + this note.
+
+---
+
+## Addendum (2026-09-02) - two corrections to the record above
+
+Found during the W3-a repo cleanup by re-reading `scores.jsonl` against `loop.py`. The
+verdict and the follow-ups are unchanged; two supporting statements were wrong.
+
+1. **Iteration 2's `SKIPPED_JUDGE` was NOT a parse failure.** The note above calls it "the
+   judge's occasional miss - output without a clean JSON object", and follow-up 2 prescribes
+   fence-stripping on that basis. The row disproves it: `loop.py:107-109` raises
+   `SKIPPED_JUDGE` when the decision is `None` **or** its `blocking_issues` list is non-empty,
+   and `loop.py:136` records `selected_dimension` only for a non-`None` decision. Iteration 2's
+   row carries `"selected_dimension": "build_stability"`, so the judge returned a **parseable**
+   decision and skipped on non-empty `blocking_issues`. Fence-stripping is still worth doing as
+   robustness, but it would not have prevented this skip. The real gap is that the two causes
+   share one tag and cannot be told apart from `scores.jsonl` - split them before tuning.
+
+2. **"Flat `avg_raw` 8.25 -> 8.25" overstates the data.** There is exactly ONE scored point:
+   the iteration-0 baseline. Iterations 1-3 each record `"scores": null` and `"avg_raw": null`
+   because all three skipped upstream of the render-score gate. The trajectory is flat *by
+   construction* - nothing was ever applied, so there was no second measurement to move. This
+   strengthens rather than weakens the conclusion (the loop never got to try), but the arrow
+   notation implies a comparison the run did not produce.

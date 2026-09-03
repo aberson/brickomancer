@@ -2,7 +2,7 @@
 
 ## Project overview
 
-LEGO build generator. Takes a photo of a real-world object (or a text description) and produces 3 build suggestions (compact/standard/detailed) with rendered previews and parts lists, then generates a downloadable step-by-step instruction book (official LEGO style) for the selected suggestion. Optionally identifies available LEGO pieces from photos (via Claude OAuth subprocess) and uses them as soft build constraints. Local-first personal tool; REST API designed for future migration to a phone or desktop frontend.
+LEGO build generator. Takes a photo of a real-world object (or a text description) and produces 3 build suggestions (compact/standard/detailed) with rendered previews and parts lists, then generates a downloadable step-by-step instruction book (official LEGO style) for the selected suggestion. Optionally identifies available LEGO pieces from photos (via Claude OAuth subprocess) and reports them; using that inventory as a soft build constraint is accepted by `suggestion_service` but **not yet applied** (#64). Local-first personal tool; REST API designed for future migration to a phone or desktop frontend.
 
 ## Stack
 
@@ -156,12 +156,21 @@ regression gate + the calibration loop are built and the calibration was run + o
   `SKIPPED_DEV` every iter (claude returns prose + a code-fence, not strict JSON). Judge reasons
   correctly about the real code. Zero source mutated.
 
-**Next action: the rebuild is COMPLETE (all 10 steps).** No rebuild step remains. Optional follow-ups
-(none blocking): (1) **fix the harness developer step** — switch from a whole-file JSON round-trip to a
-diff/patch or file-write edit, so the calibration loop can actually hill-climb (the highest-leverage
-follow-up); (2) the Step 5 **live star-survival** check (`scripts/step5_star_survival_uat.py`, operator/
-GPU); (3) update the **`/run-harness` skill** (still v1-layout) to drive `tests/harness/`; (4) the
-parked medium/low scan findings in the goblin pass (piece-detection no-op, dead v1 types, doc drift).
+**Next action: the rebuild is COMPLETE (all 10 steps).** No rebuild step remains. Post-rebuild work is
+registered in [`docs/follow-ups.md`](docs/follow-ups.md) — read that first, not this paragraph.
+Tracked, none blocking: **#60** fix the harness developer step (whole-file JSON round-trip → diff/patch
+or file-write edit; the highest-leverage item, it is what stops the loop hill-climbing); **#61** split the
+conflated `SKIPPED_JUDGE` tags; **#62** rewrite the `/run-harness` skill (still v1-layout) against
+`tests/harness/`; **#63** manual browser UAT of the rebuilt wizard (never done; also owns the vestigial
+`llama_server_ok` contract reference in `main.py:103-106`); **#64** piece detection is a no-op as a build
+constraint; **#65** LDView `-ExportFile=1` drops a file named `1` in the repo root (`.gitignore` carries
+`/1` as cover, not a fix). Untracked backlog (Step 5 live star-survival check, `build_stability`=3.0
+packer headroom, richer scorer dimensions, rembg model comparison, doc drift) is in the same register.
+
+**Repo cleanup 2026-09-02:** closed 8 issues orphaned by superseded plans (#4 #13 #16 #22 #23 #32 #34 #35);
+#46 and #59 stay open pending the operator's calibration sign-off. Root `plan.md` is a REQUIRED redirect
+stub — dev-observatory's `plan_locate.find_plan` resolved this project to the v1 `docs/master_plan.md`
+until it landed; keep it under 30 non-blank lines with exactly one `.md` link.
 
 **`CLAUDE_CODE_OAUTH_TOKEN` note:** Set as a Windows user environment variable (not `.env`). Load in
 PS: `$env:CLAUDE_CODE_OAUTH_TOKEN = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN", "User")`.

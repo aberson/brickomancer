@@ -1,5 +1,13 @@
 ﻿# Brickomancer — Master Plan
 
+> **Superseded as the plan of record; still live as a reference.** This is the v1 architecture
+> plan (TripoSR image path, llama-server text path). Superseded 2026-07-15 by the full rebuild at
+> commit `15f72e6`. Its architecture content is NOT dead - `documentation/rebuild-plan.md` line 11
+> links here as the v1 architecture reference (API contract, LDraw appendix, 28-color safe
+> palette). Do not delete this file.
+> **Plan of record: [`documentation/rebuild-plan.md`](../documentation/rebuild-plan.md)** - Steps 0.1-10, all DONE.
+> Do not read this file's own `**Status:**` markers as current project state.
+
 ## 1. What This Is
 
 Brickomancer is a local-first web tool that transforms a photo of a real-world object (a birthday cake, a bear, a house) or a natural language description into LEGO build instructions. Given an input, it generates 3–5 build suggestions — each with a rendered 3D preview and a parts list — then produces a downloadable step-by-step instruction book in the style of official LEGO manuals for the selected suggestion. Optionally, the user can photograph their available LEGO pieces and Brickomancer will identify and incorporate those parts as build constraints.
