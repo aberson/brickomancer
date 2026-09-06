@@ -36,6 +36,9 @@ uv run pytest -q
 uv run ruff check .
 uv run mypy src
 npm run build --prefix frontend
+
+# Docs
+powershell -ExecutionPolicy Bypass -File docs/tour/open-tour.ps1
 ```
 
 ## Directory layout
